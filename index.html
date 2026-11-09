@@ -7,8 +7,12 @@
   <meta name="description" content="Rashid Tagaev — AI/ML engineer in Incheon, South Korea. AI video dubbing, computer vision, startups.">
   <meta property="og:title" content="Rashid Tagaev — AI/ML Engineer">
   <meta property="og:description" content="AI video dubbing in 24 languages, computer vision, and startups.">
-  <meta property="og:image" content="assets/dubbe-poster.jpg">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230b0b0c'/><text x='16' y='22' font-family='monospace' font-size='16' font-weight='700' fill='%23ff7a2f' text-anchor='middle'>R_</text></svg>">
+  <meta property="og:image" content="https://0c2l2.github.io/assets/dubbe-poster.jpg">
+  <meta property="og:url" content="https://0c2l2.github.io/">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="canonical" href="https://0c2l2.github.io/">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230b0b0c'/><text x='16' y='22' font-family='monospace' font-size='16' font-weight='700' fill='%23a78bfa' text-anchor='middle'>R_</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
@@ -16,6 +20,8 @@
   <link rel="stylesheet" href="style.css">
   <script>
     document.documentElement.classList.add('js');
+    try { var t = localStorage.getItem('theme'); if (t && t !== 'violet') document.documentElement.dataset.theme = t; } catch (e) {}
+    try { var m = localStorage.getItem('mode'); if (m === 'light' || m === 'dark') document.documentElement.dataset.mode = m; } catch (e) {}
     // boot sequence once per visit (skipped with reduced motion)
     try { if (!sessionStorage.getItem('booted') && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.classList.add('booting'); } catch (e) {}
   </script>
@@ -25,14 +31,6 @@
 <div id="boot" aria-hidden="true"><pre></pre></div>
 <div class="progress"></div>
 
-<nav class="rail" aria-label="Section waypoints">
-  <a href="#top"><i></i><span>WP0 · start</span></a>
-  <a href="#work"><i></i><span>WP1 · work</span></a>
-  <a href="#interests"><i></i><span>WP2 · interests</span></a>
-  <a href="#about"><i></i><span>WP3 · about</span></a>
-  <a href="#contact"><i></i><span>WP4 · contact</span></a>
-  <b></b>
-</nav>
 
 <header class="nav">
   <a href="#top" class="logo">rashid<span>_</span></a>
@@ -41,6 +39,8 @@
     <a href="#interests">Interests</a>
     <a href="#about">About</a>
     <a href="#contact">Contact</a>
+    <button class="mode" type="button" aria-label="Colour mode: system"></button>
+    <div class="themes" role="group" aria-label="Colour theme"><button data-t="violet" style="--c:#a78bfa" aria-label="Violet theme"></button><button data-t="ember" style="--c:#ff7a2f" aria-label="Ember theme"></button><button data-t="racing" style="--c:#ff3b47" aria-label="Racing red theme"></button><button data-t="electric" style="--c:#22d3ee" aria-label="Electric cyan theme"></button><button data-t="volt" style="--c:#c6f135" aria-label="Volt lime theme"></button></div>
     <a class="nav-cv" href="assets/Rashid-Tagaev-CV.pdf" target="_blank">CV ↗</a>
   </nav>
 </header>
@@ -59,7 +59,7 @@
             <span class="line"><span style="--d:.2s">Rashid</span></span>
             <span class="line"><span style="--d:.32s"><em>Tagaev</em></span></span>
           </h1>
-          <p class="lead rise" style="--d:.5s">AI/ML engineer in Incheon, South Korea. I build machine learning systems that leave the notebook — an end-to-end AI dubbing pipeline in 24 languages, real-time computer vision — and I'm heading toward machines that see and move: robots, drones and self-driving cars.</p>
+          <p class="lead rise" style="--d:.5s">AI/ML engineer in Incheon, South Korea. I build machine learning systems that leave the notebook — an end-to-end AI dubbing pipeline in 24 languages, real-time computer vision — and I'm heading toward machines that see and move: robots, drones, self-driving cars and F1.</p>
           <div class="actions rise" style="--d:.62s">
             <a class="btn" href="#work">See my work</a>
             <a class="btn ghost" href="assets/Rashid-Tagaev-CV.pdf" target="_blank">Download CV</a>
@@ -151,6 +151,14 @@
     <div class="track">
       <span>PyTorch</span><span>TensorFlow</span><span>Whisper</span><span>NLLB-200</span><span>NVIDIA NeMo</span><span>CosyVoice</span><span>OpenCV</span><span>DeepFace</span><span>FastAPI</span><span>Flask</span><span>MySQL</span><span>React Native</span><span>Arduino</span><span>Pandas</span>
       <span>PyTorch</span><span>TensorFlow</span><span>Whisper</span><span>NLLB-200</span><span>NVIDIA NeMo</span><span>CosyVoice</span><span>OpenCV</span><span>DeepFace</span><span>FastAPI</span><span>Flask</span><span>MySQL</span><span>React Native</span><span>Arduino</span><span>Pandas</span>
+    </div>
+  </div>
+  <div class="marquee rev" aria-hidden="true">
+    <div class="track">
+      <span>robotics</span><span>formula 1</span><span>autonomous driving</span><span>drones</span><span>football</span><span>3D design</span><span>computer vision</span><span>V2X</span>
+      <span>robotics</span><span>formula 1</span><span>autonomous driving</span><span>drones</span><span>football</span><span>3D design</span><span>computer vision</span><span>V2X</span>
+      <span>robotics</span><span>formula 1</span><span>autonomous driving</span><span>drones</span><span>football</span><span>3D design</span><span>computer vision</span><span>V2X</span>
+      <span>robotics</span><span>formula 1</span><span>autonomous driving</span><span>drones</span><span>football</span><span>3D design</span><span>computer vision</span><span>V2X</span>
     </div>
   </div>
 
@@ -332,6 +340,30 @@
           <p class="link"><b>↳</b> connects to: multi-object tracking · speaker diarization</p>
         </div>
       </article>
+
+      <article class="card tile wide reveal">
+        <div class="term" aria-hidden="true">
+          <div class="term-bar"><i></i><i></i><i></i><span>f1/telemetry.py</span></div>
+          <div class="term-body"><div class="scene" data-scene="f1"><pre class="ascii" style="--cols:96"></pre></div></div>
+        </div>
+        <div class="tile-body">
+          <h3>Formula 1</h3>
+          <p>The sport where engineering is the strategy — telemetry, tyre models and race simulation deciding races in real time. I follow it for the data as much as the racing.</p>
+          <p class="link"><b>↳</b> connects to: real-time telemetry · simulation</p>
+        </div>
+      </article>
+
+      <article class="card tile reveal" style="--d:.1s">
+        <div class="term" aria-hidden="true">
+          <div class="term-bar"><i></i><i></i><i></i><span>design/gear.step</span></div>
+          <div class="term-body"><div class="scene" data-scene="gear"><pre class="ascii"></pre></div></div>
+        </div>
+        <div class="tile-body">
+          <h3>3D design</h3>
+          <p>I like shaping things, not just coding them: 3D modelling, mechanical parts and interfaces like this one — form and function in the same file.</p>
+          <p class="link"><b>↳</b> connects to: CAD → robotics · this site's visuals</p>
+        </div>
+      </article>
     </div>
   </section>
 
@@ -346,7 +378,7 @@
       <div class="term neo reveal">
         <div class="term-bar"><i></i><i></i><i></i><span>rashid@inha: ~ — neofetch</span></div>
         <div class="term-body">
-<pre><span style="--i:0"><b>rashid</b>@<b>inha</b></span><span style="--i:1" class="dim">────────────────────────────</span><span style="--i:2"><u>Name</u>      Rashid Tagaev</span><span style="--i:3"><u>Role</u>      AI / ML Engineer</span><span style="--i:4"><u>Study</u>     Integrated System Eng. @ Inha</span><span style="--i:5"><u>GPA</u>       4.41 / 4.5</span><span style="--i:6"><u>Focus</u>     Speech AI · Vision · Systems</span><span style="--i:7"><u>Stack</u>     Python · PyTorch · FastAPI · SQL</span><span style="--i:8"><u>Building</u>  DUBBE · Maple</span><span style="--i:9"><u>Into</u>      robotics · drones · autonomy · 3D</span><span style="--i:10"><u>Off-duty</u>  football</span><span style="--i:11"><u>Speaks</u>    kk · uz · ru · en · ko</span><span style="--i:12"><u>Based</u>     Incheon, South Korea</span><span style="--i:13" class="swatch"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span style="--i:14"><b>$</b> <span class="cursor"></span></span></pre>
+<pre><span style="--i:0"><b>rashid</b>@<b>inha</b></span><span style="--i:1" class="dim">────────────────────────────</span><span style="--i:2"><u>Name</u>      Rashid Tagaev</span><span style="--i:3"><u>Role</u>      AI / ML Engineer</span><span style="--i:4"><u>Study</u>     Integrated System Eng. @ Inha</span><span style="--i:5"><u>GPA</u>       4.41 / 4.5</span><span style="--i:6"><u>Focus</u>     Speech AI · Vision · Systems</span><span style="--i:7"><u>Stack</u>     Python · PyTorch · FastAPI · SQL</span><span style="--i:8"><u>Building</u>  DUBBE · Maple</span><span style="--i:9"><u>Into</u>      robotics · F1 · autonomy · 3D design</span><span style="--i:10"><u>Off-duty</u>  football</span><span style="--i:11"><u>Speaks</u>    kk · uz · ru · en · ko</span><span style="--i:12"><u>Based</u>     Incheon, South Korea</span><span style="--i:13" class="swatch"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span style="--i:14"><b>$</b> <span class="cursor"></span></span></pre>
         </div>
       </div>
       <div class="about-text reveal" style="--d:.1s">
@@ -393,6 +425,20 @@
 
   <!-- CONTACT -->
   <section id="contact" class="contact wrap reveal">
+    <div class="goal-scene" aria-hidden="true">
+      <svg class="goal" viewBox="0 0 300 175">
+        <g class="net" fill="none" stroke="#4a4a52" stroke-width="1">
+          <path d="M50 42V150M64 42V150M78 42V150M92 42V150M106 42V150M120 42V150M134 42V150M148 42V150M162 42V150M176 42V150M190 42V150M204 42V150M218 42V150M232 42V150M246 42V150"/>
+          <path d="M50 42H250M50 56H250M50 70H250M50 84H250M50 98H250M50 112H250M50 126H250M50 140H250"/>
+          <path d="M20 20 50 42M280 20 250 42M20 165 50 150M280 165 250 150M20 60 50 72M20 100 50 102M20 140 50 132M280 60 250 72M280 100 250 102M280 140 250 132M60 20 72 42M110 20 116 42M150 20 150 42M190 20 184 42M240 20 228 42"/>
+          <path d="M50 42H250V150H50Z" stroke="#6a6a72"/>
+        </g>
+        <path d="M20 168V20H280V168" fill="none" style="stroke:var(--fg)" stroke-width="7" stroke-linejoin="round"/>
+        <path d="M0 170H300" stroke="#3a3a40" stroke-width="2"/>
+      </svg>
+      <svg class="ball" viewBox="-10 -10 20 20"><circle r="9.3" fill="#f2efe9" stroke="#0b0b0c" stroke-width=".6"/><path d="M0-3.3 3.1-1 1.9 2.7h-3.8L-3.1-1z" fill="#0b0b0c"/><path d="M0-3.3V-9M3.1-1 8.6-2.8M1.9 2.7 5.3 7.3M-1.9 2.7-5.3 7.3M-3.1-1-8.6-2.8" stroke="#0b0b0c" stroke-width="1.1"/></svg>
+      <span class="goal-text">GOAL!</span>
+    </div>
     <p class="kicker">04 — Contact</p>
     <h2>Let's build something<br><em>worth using.</em></h2>
     <p>Open to AI/ML internships, research and collaborations — especially in robotics, autonomous systems and 3D vision.</p>
@@ -409,6 +455,8 @@
 <footer class="wrap">
   <span>© 2026 Rashid Tagaev</span>
   <span>Incheon, South Korea</span>
+  <button class="mode" type="button" aria-label="Colour mode: system"></button>
+    <div class="themes" role="group" aria-label="Colour theme"><button data-t="violet" style="--c:#a78bfa" aria-label="Violet theme"></button><button data-t="ember" style="--c:#ff7a2f" aria-label="Ember theme"></button><button data-t="racing" style="--c:#ff3b47" aria-label="Racing red theme"></button><button data-t="electric" style="--c:#22d3ee" aria-label="Electric cyan theme"></button><button data-t="volt" style="--c:#c6f135" aria-label="Volt lime theme"></button></div>
 </footer>
 
 <dialog id="player">

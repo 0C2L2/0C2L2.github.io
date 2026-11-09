@@ -67,6 +67,36 @@ addEventListener('scroll', () => {
   root.style.setProperty('--p', scrollY / (root.scrollHeight - innerHeight || 1));
 }, { passive: true });
 
+// Colour theme picker (saved per visitor; the head script applies it before first paint)
+const themeBtns = document.querySelectorAll('[data-t]');
+const markTheme = () => themeBtns.forEach(b => b.setAttribute('aria-pressed', b.dataset.t === (root.dataset.theme || 'violet')));
+themeBtns.forEach(b => b.addEventListener('click', () => {
+  if (b.dataset.t === 'violet') delete root.dataset.theme; else root.dataset.theme = b.dataset.t;
+  try { localStorage.setItem('theme', b.dataset.t); } catch (e) {}
+  markTheme();
+}));
+markTheme();
+
+// Light / dark / system toggle (system = follow the device; the head script applies a saved choice)
+const MODES = ['system', 'light', 'dark'];
+const MODE_ICONS = {
+  system: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
+  light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  dark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
+};
+const modeBtns = document.querySelectorAll('.mode');
+const showMode = () => {
+  const m = root.dataset.mode || 'system';
+  modeBtns.forEach(b => { b.innerHTML = MODE_ICONS[m]; b.setAttribute('aria-label', `Colour mode: ${m} (click to change)`); b.title = `${m[0].toUpperCase() + m.slice(1)} mode`; });
+};
+modeBtns.forEach(b => b.addEventListener('click', () => {
+  const next = MODES[(MODES.indexOf(root.dataset.mode || 'system') + 1) % MODES.length];
+  if (next === 'system') delete root.dataset.mode; else root.dataset.mode = next;
+  try { localStorage.setItem('mode', next); } catch (e) {}
+  showMode();
+}));
+showMode();
+
 // Cursor spotlight on cards
 document.querySelectorAll('.card').forEach(card => card.addEventListener('pointermove', e => {
   const r = card.getBoundingClientRect();
@@ -284,6 +314,13 @@ class Grid {
     this.set(r0, c0, '┌', cls); this.set(r0, c1, '┐', cls); this.set(r1, c0, '└', cls); this.set(r1, c1, '┘', cls);
     if (label) this.set(r0 - 1, c0, label, cls);
   }
+  // straight line; the character follows its on-screen slope (a row is twice as tall as a column is wide)
+  line(r0, c0, r1, c1, cls = '') {
+    const dc = c1 - c0, dr = r1 - r0, n = Math.max(1, Math.ceil(Math.max(Math.abs(dc), Math.abs(dr) * 2)));
+    const a = ((Math.atan2(-dr * 2, dc) * 180 / Math.PI) % 180 + 180) % 180;
+    const ch = a < 22.5 || a >= 157.5 ? '-' : a < 67.5 ? '/' : a < 112.5 ? '|' : '\\';
+    for (let k = 0; k <= n; k++) this.set(r0 + dr * k / n, c0 + dc * k / n, ch, cls);
+  }
   html() {
     const esc = ch => ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '&' ? '&amp;' : ch;
     return this.ch.map((row, r) => {
@@ -493,8 +530,97 @@ function footballScene(pre) {
   };
 }
 
+// F1: top-down circuit, two cars battling, racing line, live telemetry + speed trace
+function f1Scene(pre) {
+  const W = 96, H = 22, TAU = 2 * Math.PI;
+  const P = s => [48 + 37 * Math.cos(s) + 5 * Math.cos(3 * s), 23 + 14 * Math.sin(s) + 3 * Math.sin(2 * s)];  // x in cols, y in half-rows
+  const D1 = s => { const a = P(s - .01), b = P(s + .01); return [(b[0] - a[0]) / .02, (b[1] - a[1]) / .02]; };
+  const curv = s => {
+    const [x1, y1] = D1(s), a = D1(s - .01), b = D1(s + .01), x2 = (b[0] - a[0]) / .02, y2 = (b[1] - a[1]) / .02;
+    return Math.abs(x1 * y2 - y1 * x2) / Math.pow(x1 * x1 + y1 * y1, 1.5);
+  };
+  const speed = s => 330 - Math.min(1, curv(s) * 8) * 190;
+  // the track never changes: rasterise it once
+  const pts = Array.from({ length: 360 }, (_, i) => P(i / 360 * TAU)), track = [];
+  for (let r = 1; r < H - 1; r++) for (let c = 0; c < W; c++) {
+    let d = 1e9;
+    for (const [x, y] of pts) d = Math.min(d, Math.hypot(x - c, y - r * 2));
+    if (d > 2.9 && d < 4.3) track.push([r, c, '·', 'u']);
+  }
+  let s1 = 0, s2 = -.25, last = 0;
+  const trail = [], trace = [];
+  return t => {
+    const dt = Math.min(.1, Math.max(0, t - last)); last = t;
+    const step = s => speed(s) * .09 * dt / Math.hypot(...D1(s));
+    s1 += step(s1); s2 += step(s2) * (1 + .05 * Math.sin(t * .6));
+    if (s2 > s1 - .04) s2 = s1 - .04;                                     // no overtaking through the car ahead
+    const g = new Grid(W, H);
+    for (const [r, c, ch, cls] of track) g.set(r, c, ch, cls);
+    const [sx, sy] = P(0);
+    g.set(sy / 2, sx - 3, '▚▞▚▞▚▞▚');                                     // start / finish
+    const [x1, y1] = P(s1), [x2, y2] = P(s2);
+    trail.push([x1, y1]); if (trail.length > 26) trail.shift();
+    trail.forEach(([x, y], i) => g.set(y / 2, x, i > 16 ? '•' : '·', 'b'));
+    g.set(y2 / 2, x2, '█'); g.set(y2 / 2 - 1, x2 + 1, 'P2', 'u');
+    g.set(y1 / 2, x1, '█', 'b'); g.set(y1 / 2 - 1, x1 + 1, 'RT', 'b');
+    const v = speed(s1), lap = 12 + Math.floor(s1 / TAU), sector = 1 + Math.floor(((s1 % TAU) + TAU) % TAU / (TAU / 3));
+    trace.push(v); if (trace.length > 60) trace.shift();
+    g.set(0, 1, 'f1/telemetry.py'); g.set(0, 20, `LAP ${lap}/58`, 'b'); g.set(0, 33, `S${sector}`, 'u');
+    g.set(0, 39, `${Math.round(v)} km/h`); g.set(0, 52, `DRS ${v > 290 ? '●' : '○'}`, v > 290 ? 'i' : 'u');
+    g.set(0, 62, `gap +${((s1 - s2) / TAU * 92).toFixed(3)}s`, 'u');
+    g.set(H - 1, 1, 'speed ', 'u');
+    g.set(H - 1, 7, trace.map(x => ' ▁▂▃▄▅▆▇█'[Math.max(0, Math.min(8, Math.round((x - 120) / 210 * 8)))]).join(''), 'i');
+    pre.innerHTML = g.html();
+  };
+}
+
+// 3D design: a spinning wireframe gear with near/far shading and CAD annotations
+function gearScene(pre) {
+  const W = 56, H = 22, T = 12, R1 = 5, R2 = 6.4, HUB = 1.8, h = 1.1, D = 22, K = 50;
+  const outline = [];
+  for (let i = 0; i < T; i++) for (let j = 0; j < 4; j++) {
+    const a = (i + j / 4) / T * 2 * Math.PI, r = j === 1 || j === 2 ? R2 : R1;
+    outline.push([r * Math.cos(a), r * Math.sin(a)]);
+  }
+  const hub = Array.from({ length: 16 }, (_, i) => [HUB * Math.cos(i / 16 * 2 * Math.PI), HUB * Math.sin(i / 16 * 2 * Math.PI)]);
+  return t => {
+    const spin = t * .8, yaw = .35 + .25 * Math.sin(t * .35), pitch = .35;
+    const tf = ([x, y, z]) => {
+      let c = Math.cos(spin), s = Math.sin(spin); [x, y] = [x * c - y * s, x * s + y * c];
+      c = Math.cos(yaw); s = Math.sin(yaw); [x, z] = [x * c + z * s, -x * s + z * c];
+      c = Math.cos(pitch); s = Math.sin(pitch); [y, z] = [y * c - z * s, y * s + z * c];
+      const o = 1 / (z + D);
+      return [H / 2 - K * .5 * y * o, W / 2 + K * x * o, z];
+    };
+    const face = (loop, z) => loop.map(([x, y]) => tf([x, y, z]));
+    const front = face(outline, h), back = face(outline, -h), hf = face(hub, h), hb = face(hub, -h);
+    const near = front[0][2] < back[0][2];
+    const g = new Grid(W, H);
+    const ring = (q, cls) => q.forEach((p, i) => { const n = q[(i + 1) % q.length]; g.line(p[0], p[1], n[0], n[1], cls); });
+    ring(near ? back : front, 'u'); ring(near ? hb : hf, 'u');                    // far face first, dim
+    front.forEach((p, i) => { if (i % 4 === 1) g.line(p[0], p[1], back[i][0], back[i][1], 'u'); });
+    ring(near ? front : back, ''); ring(near ? hf : hb, 'b');                     // near face on top
+    const [cr, cc] = tf([0, 0, 0]);
+    g.set(cr, cc, '+', 'b');
+    g.set(0, 1, 'design/gear.step'); g.set(0, 33, `${T}T · m 1.1 · Ø${(2 * R2).toFixed(1)}`, 'u');
+    g.set(H - 2, 12, '|<' + '─'.repeat(10) + ' Ø 12.8 ' + '─'.repeat(10) + '>|', 'i');
+    g.set(H - 1, 1, `wireframe · spin ${Math.round(spin * 57.3) % 360}°`, 'u');
+    pre.innerHTML = g.html();
+  };
+}
+
 const scenes = { face: faceScene, greenhouse: greenhouseScene, library: libraryScene,
-  car: carScene, drone: droneScene, robot: robotScene, torus: torusScene, football: footballScene };
+  car: carScene, drone: droneScene, robot: robotScene, torus: torusScene, football: footballScene,
+  f1: f1Scene, gear: gearScene };
+
+// 3D tilt toward the cursor on interest tiles and the info card
+if (!reduced && matchMedia('(hover: hover)').matches) document.querySelectorAll('.tile, .neo').forEach(el => {
+  el.addEventListener('pointermove', e => {
+    const r = el.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
+    el.style.transform = `perspective(1100px) rotateX(${-y * 6}deg) rotateY(${x * 8}deg) translateY(-4px)`;
+  });
+  el.addEventListener('pointerleave', () => { el.style.transform = ''; });
+});
 document.querySelectorAll('[data-scene]').forEach(el => {
   const [a, b] = el.querySelectorAll('pre');
   animate(el, 12, scenes[el.dataset.scene](a, b));
@@ -509,71 +635,218 @@ const docBox = el => {
   return { x, y, w: el.offsetWidth, h: el.offsetHeight };
 };
 
-// An overhead gripper lowers each project into its slot as it scrolls in, opens, and lifts away.
-// Scroll-linked, so scrolling back up picks the project up again.
-const GRIPPER = `<svg viewBox="0 0 120 140" stroke-width="1.5">
-  <rect x="46" y="0" width="28" height="12" fill="#161618" stroke="#3a3a40"/>
-  <rect x="34" y="10" width="52" height="22" rx="4" fill="#18181b" stroke="#5a5a62"/>
-  <circle class="led" cx="60" cy="21" r="3" fill="#ff7a2f"/>
-  <rect x="12" y="30" width="96" height="12" rx="3" fill="#1f1f23" stroke="#5a5a62"/>
-  <g class="f-l"><path d="M20 42h12v52l8 14-6 6-14-16z" fill="#1f1f23" stroke="#9a968f"/><path d="M26 50v36" stroke="#ff7a2f"/></g>
-  <g class="f-r"><path d="M100 42H88v52l-8 14 6 6 14-16z" fill="#1f1f23" stroke="#9a968f"/><path d="M94 50v36" stroke="#ff7a2f"/></g>
-</svg>`;
-const GRIP_Y = 106, LIFT = 190;   // fingertip line inside the svg; how high a project starts
+// A floor-standing workshop arm carries each project in from the side, sets it in its slot,
+// opens its claw and pulls back. Scroll-linked, so scrolling up takes the project away again.
+document.body.insertAdjacentHTML('beforeend', `
+<svg class="arm" aria-hidden="true"><g class="arm-root">
+  <ellipse cx="0" cy="2" rx="96" ry="9" fill="rgb(0 0 0 / .6)"/>
+  <path d="M-74 -6 L-60 -40 H60 L74 -6 Z" fill="#1a1a1e" stroke="#4a4a52" stroke-width="1.5"/>
+  <path d="M-54 -22 H54" style="stroke:var(--accent)" stroke-width="4" stroke-dasharray="10 7"/>
+  <circle cx="-50" cy="-6" r="9" fill="#111113" stroke="#55555c" stroke-width="2"/>
+  <circle cx="0" cy="-6" r="9" fill="#111113" stroke="#55555c" stroke-width="2"/>
+  <circle cx="50" cy="-6" r="9" fill="#111113" stroke="#55555c" stroke-width="2"/>
+  <rect x="-38" y="-92" width="76" height="54" rx="12" fill="#202024" stroke="#5a5a62" stroke-width="1.5"/>
+  <path d="M-24 -52 H24" stroke="#3a3a40" stroke-width="2"/>
+  <g class="j1">
+    <rect class="seg seg1" x="-22" y="-23" height="46" rx="23"/>
+    <rect class="piston" x="36" y="24" height="7" rx="3.5"/>
+    <path class="groove seg1-groove" d="M30 0 H0"/>
+    <circle r="33" fill="#18181b" stroke="#6a6a72" stroke-width="2"/>
+    <circle r="12" fill="none" style="stroke:var(--accent)" stroke-width="3"/>
+    <g class="j2">
+      <rect class="seg seg2" x="-16" y="-17" height="34" rx="17"/>
+      <circle r="26" fill="#18181b" stroke="#6a6a72" stroke-width="2"/>
+      <circle r="8" style="fill:var(--accent)"/>
+      <g class="j3">
+        <circle r="18" fill="#18181b" stroke="#6a6a72" stroke-width="2"/>
+        <rect x="8" y="-18" width="32" height="36" rx="8" fill="#232327" stroke="#6a6a72" stroke-width="1.5"/>
+        <circle class="led" cx="26" cy="-8" r="3" fill="#3ddc84"/>
+        <path class="fa" d="M38 -12 L64 -23 L86 -9 L79 -3 L63 -13 L40 -4 Z" fill="#2a2a2f" stroke="#9a968f" stroke-width="1.5"/>
+        <path class="fb" d="M38 12 L64 23 L86 9 L79 3 L63 13 L40 4 Z" fill="#2a2a2f" stroke="#9a968f" stroke-width="1.5"/>
+      </g>
+    </g>
+  </g>
+</g></svg><div class="arm-tag" aria-hidden="true"></div>`);
+const arm = document.querySelector('.arm'), armTag = document.querySelector('.arm-tag');
+const armRoot = arm.querySelector('.arm-root'), J = s => arm.querySelector(s);
+const SHOULDER = 88, TIP = 66, BITE = 14;      // shoulder height above floor; wrist→fingertip; how far the claw closes over the edge
 const picks = reduced ? [] : [...document.querySelectorAll('[data-pick]')].map((el, i) => {
-  const n = String(i + 1).padStart(2, '0');
-  const grip = document.createElement('div'), slot = document.createElement('div');
-  grip.className = 'gripper'; grip.setAttribute('aria-hidden', 'true');
-  grip.innerHTML = GRIPPER + `<span>PICK ${n}<em> → ${el.dataset.pick}</em></span>`;
-  slot.className = 'slot'; slot.innerHTML = `<span>SLOT ${n}</span>`;
-  document.body.append(slot, grip);
-  return { el, grip, slot };
+  const n = String(i + 1).padStart(2, '0'), slot = document.createElement('div');
+  slot.className = 'slot'; slot.innerHTML = `<span>SLOT ${n} · ${el.dataset.pick}</span>`;
+  document.body.append(slot);
+  return { el, slot, n };
 });
 
-function placePicks() {
-  const vh = innerHeight;
-  for (const { el, grip, slot } of picks) {
-    const b = docBox(el), top = b.y - scrollY;
-    const k = Math.min(1, Math.max(0, (vh * .98 - top) / (vh * .6)));   // 0 = just below the fold, 1 = placed
-    const down = ease(Math.min(1, k / .55));                              // lowering
-    const open = Math.min(1, Math.max(0, (k - .55) / .15));               // release
-    const up = Math.max(0, (k - .7) / .3);                                // retract
-    const ty = -(1 - down) * LIFT;
-    el.style.transform = k < 1 ? `translateY(${ty}px)` : '';
-    el.style.transition = k < 1 ? 'none' : '';
-    el.style.opacity = Math.min(1, k * 4);
-    el.style.setProperty('--lift', 1 - down);
-    const show = k > 0 && k < 1;
-    grip.style.display = slot.style.display = show ? 'block' : 'none';
-    if (!show) continue;
-    grip.style.transform = `translate(${b.x - scrollX + b.w / 2 - 60}px, ${top + ty - GRIP_Y - up * 280}px)`;
-    grip.style.setProperty('--open', open);
-    grip.style.opacity = 1 - up * up;
-    slot.style.transform = `translate(${b.x - scrollX}px, ${top}px)`;
-    slot.style.width = b.w + 'px'; slot.style.height = b.h + 'px';
-    slot.style.opacity = 1 - down;
-  }
+// 2-link IK in arm-local units (x toward the card, y up), elbow-up; ex = elbow x on screen.
+// S scales the whole arm drawing; L, SHOULDER, TIP are in arm units.
+let S = 1;
+function ik(side, baseX, floorY, L, wx, wy) {
+  const X = (wx - baseX) * side / S, Y = (floorY - wy) / S - SHOULDER;
+  const d = Math.min(2 * L - .5, Math.max(1, Math.hypot(X, Y)));
+  const a2 = Math.acos(Math.max(-1, Math.min(1, (d * d - 2 * L * L) / (2 * L * L))));
+  const a1 = Math.atan2(Y, X) + Math.atan2(L * Math.sin(a2), L + L * Math.cos(a2));
+  return { a1, a2, ex: baseX + side * S * L * Math.cos(a1) };
 }
 
-// Waypoint rail: sections as a planned path, marker follows the scroll
-const rail = document.querySelector('.rail');
-const wps = [...rail.querySelectorAll('a')], marker = rail.querySelector('b');
-const wpTargets = wps.map(a => document.querySelector(a.getAttribute('href')));
-function trackRail() {
-  const mid = scrollY + innerHeight * .4, tops = wpTargets.map(t => docBox(t).y), last = tops.length - 1;
-  let i = 0;
-  while (i < last && mid >= tops[i + 1]) i++;
-  let pos = i < last ? i + Math.min(1, (mid - tops[i]) / (tops[i + 1] - tops[i])) : last;
-  if (innerHeight + scrollY >= root.scrollHeight - 4) pos = last;
-  marker.style.transform = `translateY(${pos / last * (rail.clientHeight - 16)}px)`;
-  wps.forEach((a, k) => { a.classList.toggle('on', k <= pos + .01); a.classList.toggle('cur', k === Math.floor(pos + .01)); });
+function drawArm(side, baseX, floorY, L, wx, wy, open, alpha) {
+  const { a1, a2 } = ik(side, baseX, floorY, L, wx, wy);
+  const r1 = -a1 * 180 / Math.PI, r2 = a2 * 180 / Math.PI;
+  armRoot.setAttribute('transform', `translate(${baseX} ${floorY}) scale(${side * S} ${S})`);
+  J('.j1').setAttribute('transform', `translate(0 ${-SHOULDER}) rotate(${r1})`);
+  J('.j2').setAttribute('transform', `translate(${L} 0) rotate(${r2})`);
+  J('.j3').setAttribute('transform', `translate(${L} 0) rotate(${90 - (r1 + r2)})`);   // claw points straight down
+  J('.seg1').setAttribute('width', L + 44); J('.seg2').setAttribute('width', L + 32);
+  J('.piston').setAttribute('width', L * .5); J('.seg1-groove').setAttribute('d', `M34 0 H${L - 30}`);
+  J('.fa').setAttribute('transform', `rotate(${-open * 26} 38 -12)`);
+  J('.fb').setAttribute('transform', `rotate(${open * 26} 38 12)`);
+  arm.style.opacity = alpha;
+}
+
+function placePicks() {
+  const vw = root.clientWidth, vh = innerHeight, L = 250;
+  S = Math.max(.8, Math.min(1.7, vh * .42 / L));                       // arm size follows the viewport
+  arm.setAttribute('width', vw); arm.setAttribute('height', vh);
+  let active = null;
+  for (const p of picks) {
+    const { el, slot } = p, b = docBox(el), top = b.y - scrollY, left = b.x - scrollX;
+    const k = Math.min(1, Math.max(0, (vh * .98 - top) / (vh * .85)));  // 0 = just below the fold, 1 = placed
+    const side = left + b.w / 2 > vw / 2 ? -1 : 1;                        // arm comes from the nearer side
+    const carry = ease(Math.min(1, k / .55)), off = 1 - carry;
+    const dx = -side * 260 * off, dy = 120 * off;
+    const g = Math.min(150, b.w * .25);                                   // grip point: top edge, near the arm's corner
+    el.style.transformOrigin = `${side > 0 ? g : b.w - g}px 0px`;
+    el.style.transform = k < 1 ? `translate(${dx}px, ${dy}px) rotate(${-side * 5 * off}deg)` : '';
+    el.style.transition = k < 1 ? 'none' : '';
+    el.style.opacity = Math.min(1, k * 4);
+    el.style.setProperty('--lift', off);
+    const show = k > 0 && k < 1;
+    slot.style.display = show ? 'block' : 'none';
+    if (show) {
+      slot.style.transform = `translate(${left}px, ${top}px)`;
+      slot.style.width = b.w + 'px'; slot.style.height = b.h + 'px';
+      slot.style.opacity = off;
+      if (!active) active = { p, k, side, left, top, b, dx, dy, g };
+    }
+  }
+  if (!active) { arm.style.display = armTag.style.display = 'none'; return; }
+  const { p, k, side, left, top, b, dx, dy, g } = active;
+  const open = Math.min(1, Math.max(0, (k - .55) / .15)), back = ease(Math.max(0, (k - .7) / .3));
+  let baseX = side > 0 ? Math.max(90 * S, left - 30) : Math.min(vw - 90 * S, left + b.w + 30);
+  const floorY = vh - 6;
+  let wx = (side > 0 ? left + g : left + b.w - g) + dx;                 // claw above the grip point,
+  let wy = top + dy - (TIP - BITE) * S;                                 // fingertips closing over the top edge
+  const restX = baseX + side * L * S * .5, restY = floorY - (SHOULDER + L * 1.4) * S;
+  wx += (restX - wx) * back; wy += (restY - wy) * back;
+  for (let i = 0; i < 4; i++) {                                         // roll the base inward until the elbow is on screen
+    const ex = ik(side, baseX, floorY, L, wx, wy).ex, miss = side > 0 ? 40 - ex : ex - (vw - 40);
+    if (miss <= 0) break;
+    baseX += side * miss;
+  }
+  const alpha = Math.min(1, Math.max(0, (k - .12) / .1)) * (1 - Math.max(0, (back - .6) / .4));
+  arm.style.display = armTag.style.display = 'block';
+  drawArm(side, baseX, floorY, L, wx, wy, open, alpha);
+  armTag.textContent = `ARM-01 · PICK ${p.n} → ${p.el.dataset.pick} · ${open < .05 ? 'carry' : back > 0 ? 'retract' : 'release'}`;
+  armTag.style.transform = `translate(${side > 0 ? baseX - 70 * S : baseX + 70 * S - armTag.offsetWidth}px, ${floorY - 132 * S}px)`;
+  armTag.style.opacity = alpha;
+}
+
+// F1 car: a track weaves down the page margins and swerves across between sections;
+// the car drives along it as you scroll, lighting the track behind it.
+const CAR = `<svg viewBox="-40 -125 80 250" aria-hidden="true">
+  <defs><linearGradient id="cone" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#3ddc84" stop-opacity=".35"/><stop offset="1" stop-color="#3ddc84" stop-opacity="0"/></linearGradient></defs>
+  <path class="lidar" d="M0 -36 L-30 -118 Q0 -128 30 -118 Z" fill="url(#cone)"/>
+  <path d="M-12 -35h24v5h-24z" style="fill:var(--accent)"/>
+  <rect x="-16" y="-28" width="7" height="13" rx="2" fill="#0d0d0f" stroke="#44444a"/>
+  <rect x="9" y="-28" width="7" height="13" rx="2" fill="#0d0d0f" stroke="#44444a"/>
+  <path d="M-2.5 -33 L2.5 -33 L4 -16 Q10 -10 10 2 L9 22 L-9 22 L-10 2 Q-10 -10 -4 -16 Z" fill="#f2efe9"/>
+  <path d="M-1.2 -31 L1.2 -31 L1.8 21 L-1.8 21 Z" style="fill:var(--accent)"/>
+  <ellipse cx="0" cy="-4" rx="3.8" ry="6.5" fill="#0b0b0c"/>
+  <path d="M-4.5 -8 Q0 -15 4.5 -8" stroke="#6a6a72" stroke-width="1.6" fill="none"/>
+  <rect x="-17" y="9" width="8" height="15" rx="2" fill="#0d0d0f" stroke="#44444a"/>
+  <rect x="9" y="9" width="8" height="15" rx="2" fill="#0d0d0f" stroke="#44444a"/>
+  <path d="M-13 24h26v6h-26z" style="fill:var(--accent)"/><path d="M-13 26h26" stroke="#0b0b0c"/>
+</svg><span></span>`;
+document.body.insertAdjacentHTML('beforeend', `<svg class="racetrack" aria-hidden="true"></svg><div class="f1" aria-hidden="true">${CAR}</div>`);
+const trackSvg = document.querySelector('.racetrack'), car = document.querySelector('.f1');
+const carBody = car.querySelector('svg'), carLabel = car.querySelector('span');
+const SECTORS = ['#work', '#interests', '#about', '#contact'];
+let lap = null;   // { pts: [{l, x, y}], total, done, secs } or null when hidden
+
+function buildTrack() {
+  const vw = root.clientWidth;
+  trackSvg.style.height = '0';
+  if (reduced || vw < 1280) { trackSvg.style.display = car.style.display = 'none'; lap = null; return; }
+  const docH = root.scrollHeight, gut = ((vw - 1180) / 2 + 24) / 2, Lx = gut, Rx = vw - gut;
+  const secs = SECTORS.map(s => docBox(document.querySelector(s)).y);
+  let d = `M${Rx} 150`, kerbs = '', boards = '';
+  secs.forEach((y, i) => {
+    const from = i % 2 ? Lx : Rx, to = i % 2 ? Rx : Lx, y0 = y + 12, y1 = y + 108;
+    const curve = `C${from} ${y0 + 60} ${to} ${y1 - 60} ${to} ${y1}`;
+    d += ` L${from} ${y0} ${curve}`;
+    kerbs += `M${from} ${y0} ${curve} `;
+    const toward = to > from ? 1 : -1;     // sector board sits beside the track, on the inside of the bend
+    boards += `<text x="${from + toward * 48}" y="${y0 - 6}" text-anchor="${toward > 0 ? 'start' : 'end'}">S${i + 1} · ${SECTORS[i].slice(1).toUpperCase()}</text>`;
+  });
+  const endY = docH - 130;
+  d += ` L${Rx} ${endY}`;
+  const flag = (x, y) => Array.from({ length: 8 }, (_, i) => `<rect x="${x - 16 + (i % 4) * 8}" y="${y + (i > 3 ? 4 : 0)}" width="8" height="4" fill="${(i + (i > 3)) % 2 ? '#f2efe9' : '#0b0b0c'}"/>`).join('');
+  trackSvg.setAttribute('width', vw); trackSvg.setAttribute('height', docH);
+  trackSvg.style.height = docH + 'px';
+  trackSvg.innerHTML = `
+    <path class="t-edge" d="${d}"/><path class="t-kerb-w" d="${kerbs}"/><path class="t-kerb" d="${kerbs}"/>
+    <path class="t-asphalt" d="${d}"/><path class="t-center" d="${d}"/><path class="t-done" d="${d}"/>
+    ${flag(Rx, 172)}<text x="${Rx}" y="196" text-anchor="middle">START</text>
+    ${flag(Rx, endY - 22)}<text x="${Rx}" y="${endY + 8}" text-anchor="middle">FINISH</text>${boards}`;
+  const path = trackSvg.querySelector('.t-asphalt'), total = path.getTotalLength(), pts = [];
+  for (let l = 0; l <= total; l += 4) { const p = path.getPointAtLength(l); pts.push({ l, x: p.x, y: p.y }); }
+  trackSvg.style.display = car.style.display = 'block';
+  lap = { pts, total, done: trackSvg.querySelector('.t-done'), secs };
+  driveCar();
+}
+
+let lastL = 0, lastT = 0, kmh = 0, idle;
+function driveCar() {
+  if (!lap) return;
+  const { pts, total, done, secs } = lap, vh = innerHeight;
+  const frac = scrollY / Math.max(1, root.scrollHeight - vh);
+  const target = scrollY + vh * (.55 + .3 * frac);                    // reaches the finish at the bottom
+  let lo = 0, hi = pts.length - 1;                                     // y only grows along the track
+  while (lo < hi) { const m = (lo + hi) >> 1; pts[m].y < target ? lo = m + 1 : hi = m; }
+  const p = pts[lo], a = pts[Math.max(0, lo - 3)], b = pts[Math.min(pts.length - 1, lo + 3)];
+  const ang = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI + 90;
+  car.style.transform = `translate(${p.x}px, ${p.y}px)`;
+  carBody.style.transform = `rotate(${ang}deg)`;
+  done.style.strokeDasharray = `${p.l} ${total}`;
+  const now = performance.now(), v = Math.abs(p.l - lastL) / Math.max(16, now - lastT) * 1000;
+  kmh += (Math.min(352, v * .45) - kmh) * .35; lastL = p.l; lastT = now;
+  const sector = secs.filter(y => p.y > y).length;
+  carLabel.textContent = `${sector ? 'S' + sector : 'GRID'} · ${Math.round(kmh)} km/h`;
+  clearTimeout(idle);
+  idle = setTimeout(() => { kmh = 0; carLabel.textContent = `${sector ? 'S' + sector : 'GRID'} · 0 km/h`; }, 300);
+}
+new ResizeObserver(() => buildTrack()).observe(document.body);
+
+// Football: the ball is kicked into the goal as the contact section arrives
+const goalScene = document.querySelector('.goal-scene');
+const ball = goalScene.querySelector('.ball'), net = goalScene.querySelector('.net'), goalEl = goalScene.querySelector('.goal');
+function kick() {
+  const sec = goalScene.parentElement, r = sec.getBoundingClientRect(), vh = innerHeight;
+  const p = reduced ? 1 : Math.min(1, Math.max(0, (vh * .95 - r.top) / (vh * .55)));
+  const W = sec.clientWidth, H = sec.clientHeight, gb = goalEl.getBoundingClientRect();
+  const ex = gb.left - r.left + gb.width * .5, ey = gb.top - r.top + gb.height * .55;
+  const sx = W * .1, sy = H * .85, f = Math.min(1, p / .8), e = 1 - (1 - f) ** 2;
+  const x = sx + (ex - sx) * e, y = sy + (ey - sy) * e - Math.sin(Math.PI * f) * H * .3;
+  ball.style.transform = `translate(${x - 17}px, ${y - 17}px) rotate(${p * 900}deg) scale(${1 - .4 * e})`;
+  const bulge = Math.max(0, (p - .8) / .2);
+  net.style.transform = `scale(${1 + bulge * .08}, ${1 + bulge * .05})`;
+  goalScene.classList.toggle('scored', p > .86);
 }
 
 let queued = false;
 const onScroll = () => {
   if (queued) return;
   queued = true;
-  requestAnimationFrame(() => { queued = false; placePicks(); trackRail(); });
+  requestAnimationFrame(() => { queued = false; placePicks(); driveCar(); kick(); });
 };
 addEventListener('scroll', onScroll, { passive: true });
 addEventListener('resize', onScroll);
