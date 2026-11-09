@@ -14,11 +14,25 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
   <link rel="preload" href="assets/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="style.css">
-  <script>document.documentElement.classList.add('js')</script>
+  <script>
+    document.documentElement.classList.add('js');
+    // boot sequence once per visit (skipped with reduced motion)
+    try { if (!sessionStorage.getItem('booted') && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.classList.add('booting'); } catch (e) {}
+  </script>
 </head>
 <body>
 
+<div id="boot" aria-hidden="true"><pre></pre></div>
 <div class="progress"></div>
+
+<nav class="rail" aria-label="Section waypoints">
+  <a href="#top"><i></i><span>WP0 · start</span></a>
+  <a href="#work"><i></i><span>WP1 · work</span></a>
+  <a href="#interests"><i></i><span>WP2 · interests</span></a>
+  <a href="#about"><i></i><span>WP3 · about</span></a>
+  <a href="#contact"><i></i><span>WP4 · contact</span></a>
+  <b></b>
+</nav>
 
 <header class="nav">
   <a href="#top" class="logo">rashid<span>_</span></a>
@@ -148,12 +162,12 @@
     </div>
 
     <!-- DUBBE (featured) -->
-    <article class="feature reveal">
-      <div class="feature-media card">
+    <article class="feature">
+      <div class="feature-media card" data-pick="DUBBE">
         <video src="assets/dubbe-preview.mp4" poster="assets/dubbe-poster.jpg" muted loop playsinline preload="none" data-autoplay></video>
         <button class="play" data-video="assets/dubbe-demo.mp4"><span>▶</span> Watch full demo · 2:33</button>
       </div>
-      <div class="feature-body">
+      <div class="feature-body reveal" style="--d:.15s">
         <p class="meta">Capstone & Startup · Inha University × HumbleBeeAI · Sept 2026 – now</p>
         <h3>DUBBE — AI video dubbing</h3>
         <p class="role">AI / Technical Lead</p>
@@ -179,12 +193,12 @@
     </article>
 
     <!-- MAPLE (featured) -->
-    <article class="feature flip reveal">
-      <div class="feature-media card">
+    <article class="feature flip">
+      <div class="feature-media card" data-pick="Maple">
         <video src="assets/maple.mp4" poster="assets/maple-poster.jpg" muted loop playsinline preload="none" data-autoplay></video>
         <button class="play" data-video="assets/maple.mp4"><span>▶</span> Watch with sound</button>
       </div>
-      <div class="feature-body">
+      <div class="feature-body reveal" style="--d:.15s">
         <p class="meta">Startup · Incheon · Sept 2026 – now</p>
         <h3>Maple — the sponsorship marketplace</h3>
         <p class="role">Co-Founder</p>
@@ -200,7 +214,7 @@
 
     <!-- COURSE PROJECTS: live ASCII scenes drawn by script.js -->
     <div class="grid3">
-      <article class="card project reveal">
+      <article class="card project" data-pick="facial analysis">
         <div class="term thumb" aria-hidden="true">
           <div class="term-bar"><i></i><i></i><i></i><span>face_analysis.py</span></div>
           <div class="term-body">
@@ -216,7 +230,7 @@
         </div>
       </article>
 
-      <article class="card project reveal" style="--d:.1s">
+      <article class="card project" data-pick="greenhouse">
         <div class="term thumb" aria-hidden="true">
           <div class="term-bar"><i></i><i></i><i></i><span>greenhouse/monitor</span></div>
           <div class="term-body">
@@ -232,7 +246,7 @@
         </div>
       </article>
 
-      <article class="card project reveal" style="--d:.2s">
+      <article class="card project" data-pick="library backend">
         <div class="term thumb" aria-hidden="true">
           <div class="term-bar"><i></i><i></i><i></i><span>library-api — mysql</span></div>
           <div class="term-body">

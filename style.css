@@ -299,6 +299,55 @@ h4 { font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: .08e
 
 footer { display: flex; justify-content: space-between; padding-block: 32px; color: var(--muted); font: 12px var(--mono); border-top: 1px solid var(--line); }
 
+/* overhead gripper that places each project (positioned by script.js) */
+[data-pick] { box-shadow: 0 calc(var(--lift, 0) * 60px) calc(var(--lift, 0) * 100px) -20px rgb(0 0 0 / .9); }
+.gripper { position: fixed; left: 0; top: 0; width: 120px; z-index: 30; pointer-events: none; display: none; --open: 0; }
+.gripper::before {      /* gantry rail up to the ceiling */
+  content: ""; position: absolute; left: 50%; bottom: calc(100% - 2px); width: 10px; height: 100vh; transform: translateX(-50%);
+  border-inline: 2px solid #3a3a40; background: repeating-linear-gradient(transparent 0 14px, #2a2a2f 14px 16px);
+}
+.gripper svg { display: block; width: 120px; height: 140px; overflow: visible; }
+.gripper .f-l { transform-origin: 26px 42px; transform: rotate(calc(var(--open) * 24deg)); }
+.gripper .f-r { transform-origin: 94px 42px; transform: rotate(calc(var(--open) * -24deg)); }
+.gripper .led { animation: blink .5s steps(1) infinite; }
+.gripper span {
+  position: absolute; left: 100%; top: 10px; margin-left: 10px; white-space: nowrap;
+  font: 11px var(--mono); color: var(--accent); background: rgb(11 11 12 / .9);
+  border: 1px solid rgb(255 122 47 / .4); padding: 3px 8px; border-radius: 6px;
+}
+.gripper em { font-style: normal; }
+@media (max-width: 640px) { .gripper em { display: none; } }
+.slot { position: fixed; left: 0; top: 0; z-index: -1; pointer-events: none; display: none; border: 1px dashed rgb(255 122 47 / .55); border-radius: 20px; }
+.slot span { position: absolute; left: 16px; bottom: 12px; font: 11px var(--mono); color: var(--accent); }
+
+/* waypoint rail: sections as a planned path */
+.rail { position: fixed; right: 22px; top: 50%; translate: 0 -50%; z-index: 35; height: 260px; width: 14px; display: flex; flex-direction: column; justify-content: space-between; align-items: center; }
+.rail::before { content: ""; position: absolute; top: 7px; bottom: 7px; left: 50%; border-left: 1px dashed #3a3a40; }
+.rail a { position: relative; width: 14px; height: 14px; display: grid; place-items: center; text-decoration: none; }
+.rail i { width: 7px; height: 7px; border: 1px solid #55555c; background: var(--bg); rotate: 45deg; transition: background .3s, border-color .3s; }
+.rail a.on i { background: var(--accent); border-color: var(--accent); }
+.rail span { position: absolute; right: 24px; white-space: nowrap; font: 11px var(--mono); color: var(--muted); opacity: 0; translate: 6px 0; transition: opacity .25s, translate .25s; }
+.rail a:hover span, .rail a.cur span { opacity: 1; translate: 0; }
+.rail a.cur span { color: var(--fg); }
+.rail b {
+  position: absolute; left: 50%; top: 0; width: 16px; height: 16px; margin-left: -8px; pointer-events: none;
+  border: 1.5px solid var(--accent); border-radius: 50%; box-shadow: 0 0 12px rgb(255 122 47 / .6); transition: transform .15s linear;
+}
+.rail b::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--accent); }
+@media (max-width: 1260px) { .rail { display: none; } }
+
+/* boot sequence */
+#boot {
+  position: fixed; inset: 0; z-index: 100; background: var(--bg); display: none; place-items: center;
+  clip-path: inset(0 0 0 0); transition: clip-path .7s var(--ease);
+}
+.booting #boot, #boot.off { display: grid; }
+#boot.off { clip-path: inset(0 0 100% 0); }
+#boot pre { margin: 0; font: 13px/1.9 var(--mono); color: var(--muted); min-width: min(460px, 88vw); min-height: 12em; }
+#boot i { color: var(--green); font-style: normal; }
+#boot b { color: var(--accent); font-weight: 400; }
+.booting .rise, .booting .line > span, .booting .portrait span { animation-play-state: paused; }
+
 /* video dialog */
 dialog { border: 0; padding: 0; background: transparent; width: min(1100px, 92vw); max-width: none; overflow: visible; }
 dialog::backdrop { background: rgb(0 0 0 / .85); backdrop-filter: blur(6px); }

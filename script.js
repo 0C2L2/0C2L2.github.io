@@ -1,4 +1,5 @@
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const root = document.documentElement;
 const RAMP = ' .:-=+*#%@';
 
 // Reveal sections as they scroll into view
@@ -27,10 +28,40 @@ function count(el) {
   };
   reduced ? (el.textContent = end.toFixed(dec)) : requestAnimationFrame(tick);
 }
-setTimeout(() => document.querySelectorAll('[data-count]').forEach(count), 800);
+const startCounters = () => setTimeout(() => document.querySelectorAll('[data-count]').forEach(count), 800);
+
+// Boot sequence (head script adds .booting once per visit); hero animations wait for it
+const boot = document.getElementById('boot');
+if (root.classList.contains('booting')) {
+  try { sessionStorage.setItem('booted', '1'); } catch (e) {}
+  const pre = boot.querySelector('pre');
+  const lines = [
+    '<b>rashid.os</b> v2026.11 — booting',
+    '<i>[ ok ]</i> perception    vision · speech · diarization',
+    '<i>[ ok ]</i> actuators     arm 2-dof · gripper',
+    '<i>[ ok ]</i> telemetry     uart · hc-12 · bluetooth',
+    '<i>[ ok ]</i> projects      5 loaded',
+    '&gt; launching portfolio_',
+  ];
+  lines.forEach((l, i) => setTimeout(() => { pre.innerHTML += l + '\n'; }, 100 + i * 140));
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    boot.classList.add('off');
+    root.classList.remove('booting');
+    startCounters();
+    setTimeout(() => boot.remove(), 800);
+  };
+  setTimeout(finish, 1250);
+  boot.addEventListener('click', finish);
+} else {
+  boot.remove();
+  startCounters();
+}
 
 // Nav background + scroll progress bar
-const nav = document.querySelector('.nav'), root = document.documentElement;
+const nav = document.querySelector('.nav');
 addEventListener('scroll', () => {
   nav.classList.toggle('scrolled', scrollY > 20);
   root.style.setProperty('--p', scrollY / (root.scrollHeight - innerHeight || 1));
@@ -468,3 +499,82 @@ document.querySelectorAll('[data-scene]').forEach(el => {
   const [a, b] = el.querySelectorAll('pre');
   animate(el, 12, scenes[el.dataset.scene](a, b));
 });
+
+/* ---------------- Scroll choreography ---------------- */
+
+// Document position ignoring transforms (we move the cards ourselves)
+const docBox = el => {
+  let x = 0, y = 0;
+  for (let n = el; n; n = n.offsetParent) { x += n.offsetLeft; y += n.offsetTop; }
+  return { x, y, w: el.offsetWidth, h: el.offsetHeight };
+};
+
+// An overhead gripper lowers each project into its slot as it scrolls in, opens, and lifts away.
+// Scroll-linked, so scrolling back up picks the project up again.
+const GRIPPER = `<svg viewBox="0 0 120 140" stroke-width="1.5">
+  <rect x="46" y="0" width="28" height="12" fill="#161618" stroke="#3a3a40"/>
+  <rect x="34" y="10" width="52" height="22" rx="4" fill="#18181b" stroke="#5a5a62"/>
+  <circle class="led" cx="60" cy="21" r="3" fill="#ff7a2f"/>
+  <rect x="12" y="30" width="96" height="12" rx="3" fill="#1f1f23" stroke="#5a5a62"/>
+  <g class="f-l"><path d="M20 42h12v52l8 14-6 6-14-16z" fill="#1f1f23" stroke="#9a968f"/><path d="M26 50v36" stroke="#ff7a2f"/></g>
+  <g class="f-r"><path d="M100 42H88v52l-8 14 6 6 14-16z" fill="#1f1f23" stroke="#9a968f"/><path d="M94 50v36" stroke="#ff7a2f"/></g>
+</svg>`;
+const GRIP_Y = 106, LIFT = 190;   // fingertip line inside the svg; how high a project starts
+const picks = reduced ? [] : [...document.querySelectorAll('[data-pick]')].map((el, i) => {
+  const n = String(i + 1).padStart(2, '0');
+  const grip = document.createElement('div'), slot = document.createElement('div');
+  grip.className = 'gripper'; grip.setAttribute('aria-hidden', 'true');
+  grip.innerHTML = GRIPPER + `<span>PICK ${n}<em> → ${el.dataset.pick}</em></span>`;
+  slot.className = 'slot'; slot.innerHTML = `<span>SLOT ${n}</span>`;
+  document.body.append(slot, grip);
+  return { el, grip, slot };
+});
+
+function placePicks() {
+  const vh = innerHeight;
+  for (const { el, grip, slot } of picks) {
+    const b = docBox(el), top = b.y - scrollY;
+    const k = Math.min(1, Math.max(0, (vh * .98 - top) / (vh * .6)));   // 0 = just below the fold, 1 = placed
+    const down = ease(Math.min(1, k / .55));                              // lowering
+    const open = Math.min(1, Math.max(0, (k - .55) / .15));               // release
+    const up = Math.max(0, (k - .7) / .3);                                // retract
+    const ty = -(1 - down) * LIFT;
+    el.style.transform = k < 1 ? `translateY(${ty}px)` : '';
+    el.style.transition = k < 1 ? 'none' : '';
+    el.style.opacity = Math.min(1, k * 4);
+    el.style.setProperty('--lift', 1 - down);
+    const show = k > 0 && k < 1;
+    grip.style.display = slot.style.display = show ? 'block' : 'none';
+    if (!show) continue;
+    grip.style.transform = `translate(${b.x - scrollX + b.w / 2 - 60}px, ${top + ty - GRIP_Y - up * 280}px)`;
+    grip.style.setProperty('--open', open);
+    grip.style.opacity = 1 - up * up;
+    slot.style.transform = `translate(${b.x - scrollX}px, ${top}px)`;
+    slot.style.width = b.w + 'px'; slot.style.height = b.h + 'px';
+    slot.style.opacity = 1 - down;
+  }
+}
+
+// Waypoint rail: sections as a planned path, marker follows the scroll
+const rail = document.querySelector('.rail');
+const wps = [...rail.querySelectorAll('a')], marker = rail.querySelector('b');
+const wpTargets = wps.map(a => document.querySelector(a.getAttribute('href')));
+function trackRail() {
+  const mid = scrollY + innerHeight * .4, tops = wpTargets.map(t => docBox(t).y), last = tops.length - 1;
+  let i = 0;
+  while (i < last && mid >= tops[i + 1]) i++;
+  let pos = i < last ? i + Math.min(1, (mid - tops[i]) / (tops[i + 1] - tops[i])) : last;
+  if (innerHeight + scrollY >= root.scrollHeight - 4) pos = last;
+  marker.style.transform = `translateY(${pos / last * (rail.clientHeight - 16)}px)`;
+  wps.forEach((a, k) => { a.classList.toggle('on', k <= pos + .01); a.classList.toggle('cur', k === Math.floor(pos + .01)); });
+}
+
+let queued = false;
+const onScroll = () => {
+  if (queued) return;
+  queued = true;
+  requestAnimationFrame(() => { queued = false; placePicks(); trackRail(); });
+};
+addEventListener('scroll', onScroll, { passive: true });
+addEventListener('resize', onScroll);
+onScroll();
