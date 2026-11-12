@@ -10,6 +10,14 @@
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const page = document.body.dataset.page;
   const main = $('main');
+  // Surface unexpected script errors on the page instead of failing silently
+  const showErr = msg => {
+    let n = $('#js-error');
+    if (!n) { main.insertAdjacentHTML('afterbegin', '<p id="js-error" class="notice error"></p>'); n = $('#js-error'); }
+    n.textContent = `Something went wrong: ${msg}. Try reloading the page (Ctrl+Shift+R).`;
+  };
+  addEventListener('error', e => showErr(e.message));
+  addEventListener('unhandledrejection', e => showErr((e.reason && e.reason.message) || e.reason));
 
   const sb = SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -153,17 +161,24 @@
     const login = $('#login'), dash = $('#dash');
     let ops = [], files = [], opFilter = 'all';
 
-    const show = async () => {
-      const { data: { session } } = await sb.auth.getSession();
+    // Render from the session the auth callback hands us. Never await other sb.auth calls inside
+    // that callback: supabase-js holds its auth lock there, and getSession() would deadlock sign-in.
+    let shownFor = null;
+    const render = session => {
+      const key = session ? session.user.id : '';
       login.hidden = !!session; dash.hidden = !session;
-      if (session) { $('#who').textContent = session.user.email; loadOps(); loadFiles(); }
+      if (session && shownFor !== key) { $('#who').textContent = session.user.email; loadOps(); loadFiles(); }
+      shownFor = key;
     };
+    sb.auth.onAuthStateChange((event, session) => { setTimeout(() => render(session), 0); });
     try { $('#email').value = localStorage.getItem('admin-email') || ''; } catch (e) {}
     $('#login-form').addEventListener('submit', async e => {
       e.preventDefault();
       const email = $('#email').value.trim(), msg = $('#login-msg');
       msg.textContent = 'Signing in…';
+      const slow = setTimeout(() => { msg.textContent = 'Still waiting for Supabase… check your connection, or reload and try again.'; }, 12000);
       const { error } = await sb.auth.signInWithPassword({ email, password: $('#password').value });
+      clearTimeout(slow);
       if (error) { msg.textContent = error.message === 'Invalid login credentials' ? 'Wrong email or password.' : error.message; return; }
       try { localStorage.setItem('admin-email', email); } catch (e) {}
       msg.textContent = '';
@@ -175,8 +190,7 @@
       $('#pw-msg').textContent = error ? error.message : 'Password updated.';
       if (!error) $('#new-password').value = '';
     });
-    $('#logout').addEventListener('click', async () => { await sb.auth.signOut(); show(); });
-    sb.auth.onAuthStateChange(() => show());
+    $('#logout').addEventListener('click', async () => { await sb.auth.signOut(); render(null); });
     document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
       document.querySelectorAll('[data-tab]').forEach(x => x.setAttribute('aria-pressed', x === b));
       document.querySelectorAll('.tab').forEach(t => { t.hidden = t.id !== b.dataset.tab; });
@@ -355,8 +369,6 @@
     drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
     drop.addEventListener('dragleave', () => drop.classList.remove('over'));
     drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); upload([...e.dataTransfer.files]); });
-
-    show();
   }
 
   ({ board, detail, getFile, admin })[page]?.();
