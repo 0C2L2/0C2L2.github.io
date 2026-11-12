@@ -30,4 +30,9 @@
     showMode();
   }));
   showMode();
+
+  // "Sign in" nav link reads "Dashboard" while a Supabase session is stored on this device
+  let signedIn = false;
+  try { signedIn = Object.keys(localStorage).some(k => /^sb-.+-auth-token$/.test(k)); } catch (e) {}
+  if (signedIn) document.querySelectorAll('.nav-signin').forEach(a => { a.textContent = 'Dashboard'; });
 })();

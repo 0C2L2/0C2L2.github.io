@@ -139,10 +139,22 @@
       login.hidden = !!session; dash.hidden = !session;
       if (session) { $('#who').textContent = session.user.email; loadOps(); loadFiles(); }
     };
+    try { $('#email').value = localStorage.getItem('admin-email') || ''; } catch (e) {}
     $('#login-form').addEventListener('submit', async e => {
       e.preventDefault();
-      const { error } = await sb.auth.signInWithOtp({ email: $('#email').value.trim(), options: { emailRedirectTo: location.origin + location.pathname } });
-      $('#login-msg').textContent = error ? error.message : 'Check your inbox for the sign-in link.';
+      const email = $('#email').value.trim(), msg = $('#login-msg');
+      msg.textContent = 'Signing in…';
+      const { error } = await sb.auth.signInWithPassword({ email, password: $('#password').value });
+      if (error) { msg.textContent = error.message === 'Invalid login credentials' ? 'Wrong email or password.' : error.message; return; }
+      try { localStorage.setItem('admin-email', email); } catch (e) {}
+      msg.textContent = '';
+      $('#password').value = '';
+    });
+    $('#pw-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const { error } = await sb.auth.updateUser({ password: $('#new-password').value });
+      $('#pw-msg').textContent = error ? error.message : 'Password updated. Use it next time you sign in.';
+      if (!error) $('#new-password').value = '';
     });
     $('#logout').addEventListener('click', async () => { await sb.auth.signOut(); show(); });
     sb.auth.onAuthStateChange(() => show());

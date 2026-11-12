@@ -25,6 +25,7 @@
     <a href="index.html">Home</a>
     <a href="opportunities.html">Opportunities</a>
     <a href="get.html">Get a file</a>
+    <a class="nav-signin" href="admin.html" aria-current="page">Sign in</a>
     <button class="mode" type="button" aria-label="Colour mode: system"></button>
     <div class="themes" role="group" aria-label="Colour theme"><button data-t="violet" style="--c:#a78bfa" aria-label="Violet theme"></button><button data-t="ember" style="--c:#ff7a2f" aria-label="Ember theme"></button><button data-t="racing" style="--c:#ff3b47" aria-label="Racing red theme"></button><button data-t="electric" style="--c:#22d3ee" aria-label="Electric cyan theme"></button><button data-t="volt" style="--c:#c6f135" aria-label="Volt lime theme"></button></div>
   </nav>
@@ -34,10 +35,11 @@
   <section id="login" class="login card">
     <p class="kicker">Admin</p>
     <h1 class="sub-h1">Sign in</h1>
-    <p class="lead">A one-time sign-in link goes to your email.</p>
-    <form id="login-form" class="row-form">
-      <input id="email" type="email" placeholder="you@example.com" aria-label="Email" required>
-      <button class="btn" type="submit">Send link</button>
+    <p class="lead">You stay signed in on this device until you sign out.</p>
+    <form id="login-form" class="stack-form" method="post" action="#">
+      <label>Email <input id="email" name="email" type="email" autocomplete="username" required></label>
+      <label>Password <input id="password" name="password" type="password" autocomplete="current-password" required minlength="6"></label>
+      <button class="btn" type="submit">Sign in</button>
     </form>
     <p id="login-msg" class="meta" aria-live="polite"></p>
   </section>
@@ -72,6 +74,16 @@
         <tbody id="file-rows"></tbody>
       </table></div>
     </div>
+
+    <details class="pw-box">
+      <summary>Change password</summary>
+      <form id="pw-form" class="row-form">
+        <input type="email" name="username" autocomplete="username" hidden>
+        <input id="new-password" type="password" autocomplete="new-password" minlength="8" placeholder="New password (8+ characters)" aria-label="New password" required>
+        <button class="btn" type="submit">Update</button>
+      </form>
+      <p id="pw-msg" class="meta" aria-live="polite"></p>
+    </details>
   </section>
 
   <dialog id="op-dialog" class="op-dialog">
