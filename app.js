@@ -38,7 +38,7 @@
     return `<span class="due ${cls}">${txt}</span>`;
   };
   const fmtSize = b => b == null ? '' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
-  const KIND = { opportunity: 'Opportunity', event: 'Event', post: 'Post' };
+  const KIND = { opportunity: 'Opportunity', lab: 'Lab', event: 'Event', post: 'Post' };
   const SECTIONS = { experience: 'Experience', project: 'Projects', education: 'Education', skill: 'Skills', certification: 'Certifications', award: 'Awards', language: 'Languages' };
   const isAdmin = async () => !!(await sb.auth.getSession()).data.session;   // RLS enforces the real check
   const fail = (el, e) => { el.innerHTML = `<p class="notice error">${esc(e.message || e)}</p>`; };
@@ -86,7 +86,12 @@
       const term = q.value.trim().toLowerCase();
       const rows = data.filter(o => (kind === 'all' || o.kind === kind) &&
         (!term || [o.title, o.org, o.location, o.summary, ...(o.tags || [])].join(' ').toLowerCase().includes(term)));
-      list.innerHTML = rows.length ? rows.map(o => card(o, admin)).join('') : '<p class="empty">Nothing here yet.</p>';
+      if (!rows.length) { list.innerHTML = '<p class="empty">Nothing here yet.</p>'; return; }
+      if (kind !== 'lab') { list.innerHTML = rows.map(o => card(o, admin)).join(''); return; }
+      const uni = o => (o.org || 'Other').split(' · ')[0];   // labs: one heading per university
+      const unis = [...new Set(rows.map(uni))].sort();
+      list.innerHTML = unis.map(u => `<h2 class="uni-h">${esc(u)} <span>${rows.filter(o => uni(o) === u).length}</span></h2>`
+        + rows.filter(o => uni(o) === u).map(o => card(o, admin)).join('')).join('');
     };
     document.querySelectorAll('[data-kind]').forEach(b => b.addEventListener('click', () => {
       kind = b.dataset.kind;
@@ -224,6 +229,7 @@
         if (opFilter === 'soon' && !(n !== null && n >= 0 && n <= 14)) return false;
         if (opFilter === 'active' && !ACTIVE.includes(o.status)) return false;
         if (opFilter === 'private' && o.is_public) return false;
+        if (opFilter === 'lab' && o.kind !== 'lab') return false;
         return !term || [o.title, o.org, o.location, ...(o.tags || [])].join(' ').toLowerCase().includes(term);
       });
       $('#op-rows').innerHTML = rows.length ? rows.map(o => `

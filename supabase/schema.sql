@@ -14,7 +14,7 @@ $$;
 create table if not exists public.opportunities (
   id          uuid primary key default gen_random_uuid(),
   title       text not null check (length(title) between 1 and 200),
-  kind        text not null default 'opportunity' check (kind in ('opportunity', 'event', 'post')),
+  kind        text not null default 'opportunity' check (kind in ('opportunity', 'event', 'post', 'lab')),
   org         text,
   location    text,
   url         text check (url is null or url ~* '^https?://'),

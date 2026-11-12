@@ -577,6 +577,7 @@ dialog video { width: 100%; border-radius: 14px; background: #000; }
 .op-bar { align-self: stretch; min-height: 36px; border-radius: 4px; background: var(--accent); }
 .bar-event { background: var(--green); }
 .bar-post { background: var(--muted); }
+.bar-lab { background: var(--accent2); }
 .op-main { display: grid; gap: 2px; min-width: 0; }
 .op-title { font-weight: 600; color: var(--fg); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .op-title:hover { color: var(--accent); }
@@ -788,3 +789,7 @@ body.cv-sheet { background: #fff; margin: 0; }
   .cv-build { grid-template-columns: 1fr; }
   .cv-side { position: static; }
 }
+.uni-h { grid-column: 1 / -1; font: 600 22px/1.2 var(--sans); letter-spacing: -.02em; margin: 24px 0 0; }
+.uni-h:first-child { margin-top: 0; }
+.uni-h span { font: 12px var(--mono); color: var(--muted); margin-left: 6px; }
+.kind-lab { color: var(--accent2); border-color: color-mix(in srgb, var(--accent2) 45%, transparent); }

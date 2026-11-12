@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=28cd8527">
+  <link rel="stylesheet" href="style.css?v=e603b1d9">
   <script>
     document.documentElement.classList.add('js');
     try { var t = localStorage.getItem('theme'); if (t && t !== 'violet') document.documentElement.dataset.theme = t; } catch (e) {}
@@ -96,6 +96,7 @@
             <button data-f="soon" aria-pressed="false">Due in 2 weeks</button>
             <button data-f="active" aria-pressed="false">In progress</button>
             <button data-f="private" aria-pressed="false">Private</button>
+            <button data-f="lab" aria-pressed="false">University labs</button>
           </div>
           <input id="op-q" type="search" placeholder="Search…" aria-label="Search opportunities">
         </div>
@@ -148,7 +149,7 @@
       <div class="dialog-head full"><h2 id="op-title">New opportunity</h2><button class="x-btn" type="button" data-close aria-label="Close">✕</button></div>
       <input name="id" type="hidden">
       <label class="full">Title <input name="title" required maxlength="200"></label>
-      <label>Type <select name="kind"><option value="opportunity">Opportunity</option><option value="event">Event</option><option value="post">Post</option></select></label>
+      <label>Type <select name="kind"><option value="opportunity">Opportunity</option><option value="lab">University lab</option><option value="event">Event</option><option value="post">Post</option></select></label>
       <label>Status <select name="status"><option>interested</option><option>applied</option><option>interview</option><option>offer</option><option>rejected</option><option>done</option></select></label>
       <label>Organisation <input name="org"></label>
       <label>Location <input name="location"></label>
@@ -173,7 +174,7 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="theme.js?v=28cd8527"></script>
-<script src="app.js?v=28cd8527"></script>
+<script src="theme.js?v=e603b1d9"></script>
+<script src="app.js?v=e603b1d9"></script>
 </body>
 </html>
