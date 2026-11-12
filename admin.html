@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin — Rashid Tagaev</title>
+  <meta name="description" content="Private dashboard.">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    document.documentElement.classList.add('js');
+    try { var t = localStorage.getItem('theme'); if (t && t !== 'violet') document.documentElement.dataset.theme = t; } catch (e) {}
+    try { var m = localStorage.getItem('mode'); if (m === 'light' || m === 'dark') document.documentElement.dataset.mode = m; } catch (e) {}
+  </script>
+</head>
+<body data-page="admin">
+
+<header class="nav scrolled">
+  <a href="index.html" class="logo">rashid<span>_</span></a>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="opportunities.html">Opportunities</a>
+    <a href="get.html">Get a file</a>
+    <button class="mode" type="button" aria-label="Colour mode: system"></button>
+    <div class="themes" role="group" aria-label="Colour theme"><button data-t="violet" style="--c:#a78bfa" aria-label="Violet theme"></button><button data-t="ember" style="--c:#ff7a2f" aria-label="Ember theme"></button><button data-t="racing" style="--c:#ff3b47" aria-label="Racing red theme"></button><button data-t="electric" style="--c:#22d3ee" aria-label="Electric cyan theme"></button><button data-t="volt" style="--c:#c6f135" aria-label="Volt lime theme"></button></div>
+  </nav>
+</header>
+
+<main class="wrap page">
+  <section id="login" class="login card">
+    <p class="kicker">Admin</p>
+    <h1 class="sub-h1">Sign in</h1>
+    <p class="lead">A one-time sign-in link goes to your email.</p>
+    <form id="login-form" class="row-form">
+      <input id="email" type="email" placeholder="you@example.com" aria-label="Email" required>
+      <button class="btn" type="submit">Send link</button>
+    </form>
+    <p id="login-msg" class="meta" aria-live="polite"></p>
+  </section>
+
+  <section id="dash" hidden>
+    <div class="dash-head">
+      <h1 class="sub-h1">Dashboard</h1>
+      <p class="meta">Signed in as <span id="who"></span> · <button id="logout" class="linkish" type="button">Sign out</button></p>
+    </div>
+    <div class="chips" role="group" aria-label="Sections">
+      <button data-tab="tab-ops" aria-pressed="true">Opportunities</button>
+      <button data-tab="tab-files" aria-pressed="false">Files</button>
+    </div>
+
+    <div id="tab-ops" class="tab">
+      <div class="toolbar"><button id="new-op" class="btn" type="button">+ New</button></div>
+      <div class="table-wrap"><table class="admin-table">
+        <thead><tr><th>Title</th><th>Type</th><th>Deadline</th><th>Status</th><th>Visibility</th><th></th></tr></thead>
+        <tbody id="op-rows"></tbody>
+      </table></div>
+    </div>
+
+    <div id="tab-files" class="tab" hidden>
+      <label id="drop" class="drop">
+        <input id="pick" type="file" multiple hidden>
+        <strong>Drop files here</strong> or click to choose · up to 50 MB each
+        <span class="meta">Every file gets a 6-digit code. Share it, and anyone can download it at <code>get.html</code>.</span>
+      </label>
+      <p id="up-msg" class="meta" aria-live="polite"></p>
+      <div class="table-wrap"><table class="admin-table">
+        <thead><tr><th>File</th><th>Code</th><th></th></tr></thead>
+        <tbody id="file-rows"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <dialog id="op-dialog" class="op-dialog">
+    <form id="op-form" class="op-form">
+      <h2 id="op-title">New opportunity</h2>
+      <input name="id" type="hidden">
+      <label class="full">Title <input name="title" required maxlength="200"></label>
+      <label>Type <select name="kind"><option value="opportunity">Opportunity</option><option value="event">Event</option><option value="post">Post</option></select></label>
+      <label>Status <select name="status"><option>interested</option><option>applied</option><option>interview</option><option>offer</option><option>rejected</option><option>done</option></select></label>
+      <label>Organisation <input name="org"></label>
+      <label>Location <input name="location"></label>
+      <label>Link <input name="url" type="url" placeholder="https://"></label>
+      <label>Deadline <input name="deadline" type="date"></label>
+      <label class="full">Tags <input name="tags" placeholder="robotics, internship, seoul"></label>
+      <label class="full">Summary <input name="summary" maxlength="300"></label>
+      <label class="full">Notes (markdown) <textarea name="body" rows="9" placeholder="## Requirements&#10;- ..."></textarea></label>
+      <label class="check full"><input name="is_public" type="checkbox"> Show on my public board</label>
+      <p id="op-msg" class="meta full" aria-live="polite"></p>
+      <div class="full dialog-actions"><button id="op-cancel" class="btn ghost" type="button">Cancel</button><button class="btn" type="submit">Save</button></div>
+    </form>
+  </dialog>
+</main>
+
+<footer class="wrap">
+  <span>© 2026 Rashid Tagaev</span>
+  <span class="foot-links"><a href="index.html">Home</a> · <a href="admin.html">Admin</a></span>
+  <button class="mode" type="button" aria-label="Colour mode: system"></button>
+  <div class="themes" role="group" aria-label="Colour theme"><button data-t="violet" style="--c:#a78bfa" aria-label="Violet theme"></button><button data-t="ember" style="--c:#ff7a2f" aria-label="Ember theme"></button><button data-t="racing" style="--c:#ff3b47" aria-label="Racing red theme"></button><button data-t="electric" style="--c:#22d3ee" aria-label="Electric cyan theme"></button><button data-t="volt" style="--c:#c6f135" aria-label="Volt lime theme"></button></div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="theme.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

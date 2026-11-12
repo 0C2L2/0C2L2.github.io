@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opportunity — Rashid Tagaev</title>
+  <meta name="description" content="Details of an opportunity, event or post.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    document.documentElement.classList.add('js');
+    try { var t = localStorage.getItem('theme'); if (t && t !== 'violet') document.documentElement.dataset.theme = t; } catch (e) {}
+    try { var m = localStorage.getItem('mode'); if (m === 'light' || m === 'dark') document.documentElement.dataset.mode = m; } catch (e) {}
+  </script>
+</head>
+<body data-page="detail">
+
+<header class="nav scrolled">
+  <a href="index.html" class="logo">rashid<span>_</span></a>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="opportunities.html" aria-current="page">Opportunities</a>
+    <a href="get.html">Get a file</a>
+    <button class="mode" type="button" aria-label="Colour mode: system"></button>
+    <div class="themes" role="group" aria-label="Colour theme"><button data-t="violet" style="--c:#a78bfa" aria-label="Violet theme"></button><button data-t="ember" style="--c:#ff7a2f" aria-label="Ember theme"></button><button data-t="racing" style="--c:#ff3b47" aria-label="Racing red theme"></button><button data-t="electric" style="--c:#22d3ee" aria-label="Electric cyan theme"></button><button data-t="volt" style="--c:#c6f135" aria-label="Volt lime theme"></button></div>
+  </nav>
+</header>
+
+<main class="wrap page">
+  <p><a class="back" href="opportunities.html">← All opportunities</a></p>
+  <div id="detail"><p class="meta">Loading…</p></div>
+</main>
+
+<footer class="wrap">
+  <span>© 2026 Rashid Tagaev</span>
+  <span class="foot-links"><a href="index.html">Home</a> · <a href="admin.html">Admin</a></span>
+  <button class="mode" type="button" aria-label="Colour mode: system"></button>
+  <div class="themes" role="group" aria-label="Colour theme"><button data-t="violet" style="--c:#a78bfa" aria-label="Violet theme"></button><button data-t="ember" style="--c:#ff7a2f" aria-label="Ember theme"></button><button data-t="racing" style="--c:#ff3b47" aria-label="Racing red theme"></button><button data-t="electric" style="--c:#22d3ee" aria-label="Electric cyan theme"></button><button data-t="volt" style="--c:#c6f135" aria-label="Volt lime theme"></button></div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="theme.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
