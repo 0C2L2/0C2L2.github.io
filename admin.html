@@ -17,7 +17,7 @@
     try { var m = localStorage.getItem('mode'); if (m === 'light' || m === 'dark') document.documentElement.dataset.mode = m; } catch (e) {}
   </script>
 </head>
-<body data-page="admin">
+<body data-page="admin" class="admin-page">
 
 <header class="nav scrolled">
   <a href="index.html" class="logo">rashid<span>_</span></a>
@@ -32,63 +32,93 @@
 </header>
 
 <main class="wrap page">
-  <section id="login" class="login card">
-    <p class="kicker">Admin</p>
-    <h1 class="sub-h1">Sign in</h1>
-    <p class="lead">You stay signed in on this device until you sign out.</p>
-    <form id="login-form" class="stack-form" method="post" action="#">
-      <label>Email <input id="email" name="email" type="email" autocomplete="username" required></label>
-      <label>Password <input id="password" name="password" type="password" autocomplete="current-password" required minlength="6"></label>
-      <button class="btn" type="submit">Sign in</button>
-    </form>
-    <p id="login-msg" class="meta" aria-live="polite"></p>
+  <section id="login" class="auth">
+    <div class="term auth-term">
+      <div class="term-bar"><i></i><i></i><i></i><span>~/admin — sign in</span></div>
+      <div class="auth-body">
+        <pre class="auth-ascii" aria-hidden="true"><b>rashid.os</b> console
+<i>[ ok ]</i> secure connection
+<i>[ .. ]</i> waiting for credentials<span class="cursor"></span></pre>
+        <form id="login-form" class="stack-form" method="post" action="#">
+          <label>Email <input id="email" name="email" type="email" autocomplete="username" required></label>
+          <label>Password <input id="password" name="password" type="password" autocomplete="current-password" required minlength="6"></label>
+          <button class="btn btn-wide" type="submit">Sign in</button>
+          <p id="login-msg" class="meta" aria-live="polite"></p>
+        </form>
+      </div>
+    </div>
+    <p class="auth-note">Owner access only. Got a file code? <a href="get.html">Download it here</a>.</p>
   </section>
 
-  <section id="dash" hidden>
-    <div class="dash-head">
-      <h1 class="sub-h1">Dashboard</h1>
-      <p class="meta">Signed in as <span id="who"></span> · <button id="logout" class="linkish" type="button">Sign out</button></p>
-    </div>
-    <div class="chips" role="group" aria-label="Sections">
-      <button data-tab="tab-ops" aria-pressed="true">Opportunities</button>
-      <button data-tab="tab-files" aria-pressed="false">Files</button>
-    </div>
+  <section id="dash" class="console" hidden>
+    <aside class="side">
+      <p class="side-label">Console</p>
+      <button class="side-link" data-tab="tab-ops" aria-pressed="true">
+        <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>
+        Opportunities <span id="n-ops" class="count"></span></button>
+      <button class="side-link" data-tab="tab-files" aria-pressed="false">
+        <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>
+        Files <span id="n-files" class="count"></span></button>
+      <a class="side-link" href="opportunities.html">
+        <svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></svg>
+        Public board</a>
+      <div class="side-foot">
+        <div class="who"><span class="avatar">R</span><div><b>Rashid</b><span id="who"></span></div></div>
+        <details class="pw-box">
+          <summary>Change password</summary>
+          <form id="pw-form" class="stack-form">
+            <input type="email" name="username" autocomplete="username" hidden>
+            <input id="new-password" type="password" autocomplete="new-password" minlength="8" placeholder="New password (8+ chars)" aria-label="New password" required>
+            <button class="btn btn-sm" type="submit">Update</button>
+          </form>
+          <p id="pw-msg" class="meta" aria-live="polite"></p>
+        </details>
+        <button id="logout" class="side-link out" type="button">
+          <svg viewBox="0 0 24 24"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/></svg>
+          Sign out</button>
+      </div>
+    </aside>
 
-    <div id="tab-ops" class="tab">
-      <div class="toolbar"><button id="new-op" class="btn" type="button">+ New</button></div>
-      <div class="table-wrap"><table class="admin-table">
-        <thead><tr><th>Title</th><th>Type</th><th>Deadline</th><th>Status</th><th>Visibility</th><th></th></tr></thead>
-        <tbody id="op-rows"></tbody>
-      </table></div>
-    </div>
+    <div class="console-main">
+      <div id="stats" class="stats-row"></div>
 
-    <div id="tab-files" class="tab" hidden>
-      <label id="drop" class="drop">
-        <input id="pick" type="file" multiple hidden>
-        <strong>Drop files here</strong> or click to choose · up to 50 MB each
-        <span class="meta">Every file gets a 6-digit code. Share it, and anyone can download it at <code>get.html</code>.</span>
-      </label>
-      <p id="up-msg" class="meta" aria-live="polite"></p>
-      <div class="table-wrap"><table class="admin-table">
-        <thead><tr><th>File</th><th>Code</th><th></th></tr></thead>
-        <tbody id="file-rows"></tbody>
-      </table></div>
-    </div>
+      <div id="tab-ops" class="tab">
+        <div class="tab-head">
+          <div><h2>Opportunities</h2><p class="meta">Status and visibility save as you change them.</p></div>
+          <button id="new-op" class="btn" type="button">+ New</button>
+        </div>
+        <div class="toolbar">
+          <div class="chips" role="group" aria-label="Filter">
+            <button data-f="all" aria-pressed="true">All</button>
+            <button data-f="soon" aria-pressed="false">Due in 2 weeks</button>
+            <button data-f="active" aria-pressed="false">In progress</button>
+            <button data-f="private" aria-pressed="false">Private</button>
+          </div>
+          <input id="op-q" type="search" placeholder="Search…" aria-label="Search opportunities">
+        </div>
+        <div class="op-head" aria-hidden="true"><span></span><span>Title</span><span>Deadline</span><span>Status</span><span>Public</span><span></span></div>
+        <div id="op-rows" class="rows"></div>
+      </div>
 
-    <details class="pw-box">
-      <summary>Change password</summary>
-      <form id="pw-form" class="row-form">
-        <input type="email" name="username" autocomplete="username" hidden>
-        <input id="new-password" type="password" autocomplete="new-password" minlength="8" placeholder="New password (8+ characters)" aria-label="New password" required>
-        <button class="btn" type="submit">Update</button>
-      </form>
-      <p id="pw-msg" class="meta" aria-live="polite"></p>
-    </details>
+      <div id="tab-files" class="tab" hidden>
+        <div class="tab-head">
+          <div><h2>Files</h2><p class="meta">Each file gets a 6-digit code. Anyone with it can download at <code>get.html</code>.</p></div>
+        </div>
+        <label id="drop" class="drop">
+          <input id="pick" type="file" multiple hidden>
+          <svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v4h16v-4"/></svg>
+          <strong>Drop files or click to upload</strong>
+          <span class="meta">Up to 50 MB each</span>
+        </label>
+        <p id="up-msg" class="meta" aria-live="polite"></p>
+        <div id="file-rows" class="file-list"></div>
+      </div>
+    </div>
   </section>
 
   <dialog id="op-dialog" class="op-dialog">
     <form id="op-form" class="op-form">
-      <h2 id="op-title">New opportunity</h2>
+      <div class="dialog-head full"><h2 id="op-title">New opportunity</h2><button class="x-btn" type="button" data-close aria-label="Close">✕</button></div>
       <input name="id" type="hidden">
       <label class="full">Title <input name="title" required maxlength="200"></label>
       <label>Type <select name="kind"><option value="opportunity">Opportunity</option><option value="event">Event</option><option value="post">Post</option></select></label>
@@ -98,13 +128,14 @@
       <label>Link <input name="url" type="url" placeholder="https://"></label>
       <label>Deadline <input name="deadline" type="date"></label>
       <label class="full">Tags <input name="tags" placeholder="robotics, internship, seoul"></label>
-      <label class="full">Summary <input name="summary" maxlength="300"></label>
-      <label class="full">Notes (markdown) <textarea name="body" rows="9" placeholder="## Requirements&#10;- ..."></textarea></label>
+      <label class="full">Summary <input name="summary" maxlength="300" placeholder="One line shown on the card"></label>
+      <label class="full">Notes · markdown <textarea name="body" rows="8" placeholder="## Requirements&#10;- ..."></textarea></label>
       <label class="check full"><input name="is_public" type="checkbox"> Show on my public board</label>
       <p id="op-msg" class="meta full" aria-live="polite"></p>
-      <div class="full dialog-actions"><button id="op-cancel" class="btn ghost" type="button">Cancel</button><button class="btn" type="submit">Save</button></div>
+      <div class="full dialog-actions"><button class="btn ghost" type="button" data-close>Cancel</button><button class="btn" type="submit">Save</button></div>
     </form>
   </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </main>
 
 <footer class="wrap">
