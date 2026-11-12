@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=a0d56484">
+  <link rel="stylesheet" href="style.css?v=28cd8527">
   <script>
     document.documentElement.classList.add('js');
     try { var t = localStorage.getItem('theme'); if (t && t !== 'violet') document.documentElement.dataset.theme = t; } catch (e) {}
@@ -59,6 +59,9 @@
       <button class="side-link" data-tab="tab-files" aria-pressed="false">
         <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>
         Files <span id="n-files" class="count"></span></button>
+      <button class="side-link" data-tab="tab-profile" aria-pressed="false">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+        CV profile <span id="n-prof" class="count"></span></button>
       <a class="side-link" href="opportunities.html">
         <svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></svg>
         Public board</a>
@@ -113,8 +116,32 @@
         <p id="up-msg" class="meta" aria-live="polite"></p>
         <div id="file-rows" class="file-list"></div>
       </div>
+
+      <div id="tab-profile" class="tab" hidden>
+        <div class="tab-head">
+          <div><h2>CV profile</h2><p class="meta">Everything a CV can pick from. Each opportunity's CV keeps its own picks and edited bullets.</p></div>
+          <button id="new-item" class="btn" type="button">+ New item</button>
+        </div>
+        <div id="prof-rows"></div>
+      </div>
     </div>
   </section>
+
+  <dialog id="item-dialog" class="op-dialog">
+    <form id="item-form" class="op-form">
+      <div class="dialog-head full"><h2>Profile item</h2><button class="x-btn" type="button" data-close aria-label="Close">✕</button></div>
+      <input name="id" type="hidden">
+      <label>Section <select name="section"><option value="experience">Experience</option><option value="project">Project</option><option value="education">Education</option><option value="skill">Skill</option><option value="certification">Certification</option><option value="award">Award</option><option value="language">Language</option></select></label>
+      <label>Dates <input name="dates" placeholder="Mar – Jun 2025"></label>
+      <label class="full">Title <input name="title" required maxlength="200"></label>
+      <label>Role / subtitle <input name="subtitle" placeholder="Team Leader · Course project"></label>
+      <label>Place <input name="place" placeholder="Inha University"></label>
+      <label class="full">Bullets · one per line <textarea name="bullets" rows="8"></textarea></label>
+      <label class="full">Tags <input name="tags" placeholder="vision, robotics"></label>
+      <p id="item-msg" class="meta full" aria-live="polite"></p>
+      <div class="full dialog-actions"><button class="btn ghost" type="button" data-close>Cancel</button><button class="btn" type="submit">Save</button></div>
+    </form>
+  </dialog>
 
   <dialog id="op-dialog" class="op-dialog">
     <form id="op-form" class="op-form">
@@ -146,7 +173,7 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="theme.js?v=a0d56484"></script>
-<script src="app.js?v=a0d56484"></script>
+<script src="theme.js?v=28cd8527"></script>
+<script src="app.js?v=28cd8527"></script>
 </body>
 </html>

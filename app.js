@@ -39,6 +39,7 @@
   };
   const fmtSize = b => b == null ? '' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
   const KIND = { opportunity: 'Opportunity', event: 'Event', post: 'Post' };
+  const SECTIONS = { experience: 'Experience', project: 'Projects', education: 'Education', skill: 'Skills', certification: 'Certifications', award: 'Awards', language: 'Languages' };
   const isAdmin = async () => !!(await sb.auth.getSession()).data.session;   // RLS enforces the real check
   const fail = (el, e) => { el.innerHTML = `<p class="notice error">${esc(e.message || e)}</p>`; };
 
@@ -117,6 +118,7 @@
       ${o.summary ? `<p class="big-sum">${esc(o.summary)}</p>` : ''}
       <article class="prose">${md(o.body)}</article>
       <p class="meta">Updated ${new Date(o.updated_at).toLocaleDateString('en', { dateStyle: 'medium' })}</p>`;
+    if (admin) kit(o);
   }
 
   // ───────────────────────── /get.html (no login)
@@ -159,7 +161,9 @@
 
   async function admin() {
     const login = $('#login'), dash = $('#dash');
-    let ops = [], files = [], opFilter = 'all';
+    let ops = [], files = [], prof = [], opFilter = 'all';
+    const loadFiles = fileManager({ rows: $('#file-rows'), drop: $('#drop'), pick: $('#pick'), msg: $('#up-msg'),
+      after: fs => { files = fs; stats(); } });
 
     // Render from the session the auth callback hands us. Never await other sb.auth calls inside
     // that callback: supabase-js holds its auth lock there, and getSession() would deadlock sign-in.
@@ -167,7 +171,7 @@
     const render = session => {
       const key = session ? session.user.id : '';
       login.hidden = !!session; dash.hidden = !session;
-      if (session && shownFor !== key) { $('#who').textContent = session.user.email; loadOps(); loadFiles(); }
+      if (session && shownFor !== key) { $('#who').textContent = session.user.email; loadOps(); loadFiles(); loadProf(); }
       shownFor = key;
     };
     sb.auth.onAuthStateChange((event, session) => { setTimeout(() => render(session), 0); });
@@ -256,7 +260,7 @@
       dlg.showModal();
     }
     $('#new-op').addEventListener('click', () => openOp());
-    document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => dlg.close()));
+    document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
     $('#op-q').addEventListener('input', drawOps);
     document.querySelectorAll('[data-f]').forEach(b => b.addEventListener('click', () => {
       opFilter = b.dataset.f;
@@ -298,12 +302,66 @@
       dlg.close(); toast(id ? 'Saved' : 'Added'); loadOps();
     });
 
-    // ── files
-    const shareUrl = code => new URL(`get.html?code=${code}`, location.href).href;
-    const fileUrl = x => sb.storage.from('files').getPublicUrl(x.path, { download: x.name }).data.publicUrl;
-    const ext = n => (n.includes('.') ? n.split('.').pop() : 'file').slice(0, 4).toUpperCase();
+    // ── master profile (what every CV picks from)
+    const idlg = $('#item-dialog'), itf = $('#item-form');
+    const drawProf = () => {
+      $('#n-prof').textContent = prof.length;
+      $('#prof-rows').innerHTML = Object.entries(SECTIONS).map(([k, h]) => {
+        const xs = prof.filter(p => p.section === k);
+        return xs.length ? `<h3 class="prof-h">${h}</h3>` + xs.map(p => `
+          <div class="prof-row">
+            <div><b>${esc(p.title)}</b><span class="meta">${esc([p.subtitle, p.place, p.dates].filter(Boolean).join(' · '))}${p.bullets.length ? ` · ${p.bullets.length} bullet${p.bullets.length > 1 ? 's' : ''}` : ''}</span></div>
+            <div class="icon-btns"><button data-iedit="${p.id}" title="Edit" aria-label="Edit">${ICON.edit}</button><button class="danger" data-idel="${p.id}" title="Delete" aria-label="Delete">${ICON.trash}</button></div>
+          </div>`).join('') : '';
+      }).join('') || '<div class="empty-state"><b>No profile items yet</b></div>';
+    };
+    async function loadProf() {
+      const { data, error } = await sb.from('profile_items').select('*').order('sort');
+      if (error) return fail($('#prof-rows'), error);
+      prof = data; drawProf();
+    }
+    const openItem = (p = {}) => {
+      itf.reset();
+      for (const k of ['id', 'title', 'subtitle', 'place', 'dates']) itf.elements[k].value = p[k] || '';
+      itf.elements.section.value = p.section || 'project';
+      itf.elements.bullets.value = (p.bullets || []).join('\n');
+      itf.elements.tags.value = (p.tags || []).join(', ');
+      $('#item-msg').textContent = '';
+      idlg.showModal();
+    };
+    $('#new-item').addEventListener('click', () => openItem());
+    $('#prof-rows').addEventListener('click', async e => {
+      const ed = e.target.closest('[data-iedit]'), del = e.target.closest('[data-idel]');
+      if (ed) openItem(prof.find(p => p.id === ed.dataset.iedit));
+      if (del && confirm('Delete this item? CVs that use it will drop it.')) {
+        const { error } = await sb.from('profile_items').delete().eq('id', del.dataset.idel);
+        if (error) return alert(error.message);
+        toast('Deleted'); loadProf();
+      }
+    });
+    itf.addEventListener('submit', async e => {
+      e.preventDefault();
+      const v = k => itf.elements[k].value.trim() || null, id = itf.elements.id.value;
+      const row = {
+        section: itf.elements.section.value, title: v('title'), subtitle: v('subtitle'), place: v('place'), dates: v('dates'),
+        bullets: itf.elements.bullets.value.split('\n').map(s => s.trim()).filter(Boolean),
+        tags: itf.elements.tags.value.split(',').map(t => t.trim()).filter(Boolean),
+      };
+      if (!id) row.sort = prof.reduce((m, p) => Math.max(m, p.sort), 0) + 1;
+      const { error } = await (id ? sb.from('profile_items').update(row).eq('id', id) : sb.from('profile_items').insert(row));
+      if (error) { $('#item-msg').textContent = error.message; return; }
+      idlg.close(); toast(id ? 'Saved' : 'Added'); loadProf();
+    });
+  }
+
+  // ── file list + uploads: the admin Files tab (all files) and each opportunity's kit (only its files)
+  const shareUrl = code => new URL(`get.html?code=${code}`, location.href).href;
+  const fileUrl = x => sb.storage.from('files').getPublicUrl(x.path, { download: x.name }).data.publicUrl;
+  const ext = n => (n.includes('.') ? n.split('.').pop() : 'file').slice(0, 4).toUpperCase();
+  function fileManager({ rows, drop, pick, msg, opp = null, after = () => {} }) {
+    let files = [];
     const drawFiles = () => {
-      $('#file-rows').innerHTML = files.length ? files.map(x => `
+      rows.innerHTML = files.length ? files.map(x => `
         <div class="file-card${x.code ? '' : ' off'}">
           <span class="file-ic">${esc(ext(x.name))}</span>
           <div class="file-info">
@@ -322,12 +380,14 @@
         </div>`).join('')
         : '<div class="empty-state"><b>No files yet</b><span class="meta">Drop one above to get a 6-digit code.</span></div>';
     };
-    async function loadFiles() {
-      const { data, error } = await sb.from('files').select('*').order('created_at', { ascending: false });
-      if (error) return fail($('#file-rows'), error);
-      files = data; drawFiles(); stats();
+    async function load() {
+      let q = sb.from('files').select('*').order('created_at', { ascending: false });
+      if (opp) q = q.eq('opportunity_id', opp);
+      const { data, error } = await q;
+      if (error) return fail(rows, error);
+      files = data; drawFiles(); after(files);
     }
-    $('#file-rows').addEventListener('click', async e => {
+    rows.addEventListener('click', async e => {
       const b = e.target.closest('button');
       if (!b) return;
       if (b.dataset.copy) { await navigator.clipboard.writeText(b.dataset.copy); toast(`Code ${b.dataset.copy} copied`); }
@@ -335,40 +395,222 @@
       if (b.dataset.regen) {
         const { error } = await sb.rpc('regenerate_code', { p_id: b.dataset.regen });
         if (error) return alert(error.message);
-        toast('New code issued'); loadFiles();
+        toast('New code issued'); load();
       }
       if (b.dataset.revoke && confirm('Turn off sharing? The current code will stop working.')) {
         const { error } = await sb.from('files').update({ code: null }).eq('id', b.dataset.revoke);
         if (error) return alert(error.message);
-        toast('Sharing off'); loadFiles();
+        toast('Sharing off'); load();
       }
       if (b.dataset.rm && confirm('Delete this file for good?')) {
         const { error: se } = await sb.storage.from('files').remove([b.dataset.path]);
         const { error: de } = se ? { error: se } : await sb.from('files').delete().eq('id', b.dataset.rm);
         if (se || de) return alert((se || de).message);
-        toast('File deleted'); loadFiles();
+        toast('File deleted'); load();
       }
     });
     const upload = async list => {
-      const msg = $('#up-msg');
       for (const file of list) {
         msg.textContent = `Uploading ${file.name}…`;
         if (file.size > 50 * 1048576) { msg.textContent = `${file.name} is over the 50 MB limit.`; continue; }
         const path = `${crypto.randomUUID()}/${file.name.replace(/[^\w.\- ]+/g, '_')}`;
         const { error: se } = await sb.storage.from('files').upload(path, file, { contentType: file.type || undefined });
         if (se) { msg.textContent = se.message; continue; }
-        const { data, error } = await sb.from('files').insert({ name: file.name, path, size: file.size, mime: file.type || null }).select('code').single();
+        const { data, error } = await sb.from('files').insert({ name: file.name, path, size: file.size, mime: file.type || null, opportunity_id: opp }).select('code').single();
         if (error) { await sb.storage.from('files').remove([path]); msg.textContent = error.message; continue; }
         msg.innerHTML = `Uploaded <strong>${esc(file.name)}</strong>. Code <span class="code">${data.code}</span>`;
         toast(`${file.name} uploaded`);
       }
-      loadFiles();
+      load();
     };
-    const drop = $('#drop'), pick = $('#pick');
     pick.addEventListener('change', () => { upload([...pick.files]); pick.value = ''; });
     drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
     drop.addEventListener('dragleave', () => drop.classList.remove('over'));
     drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); upload([...e.dataTransfer.files]); });
+    return load;
+  }
+
+  // ───────────────────────── application kit (admin only, under each opportunity)
+  const CONTACT = 'Incheon, South Korea · rashidtagaev01@gmail.com · github.com/0C2L2 · linkedin.com/in/rashid-tagaev · 0c2l2.github.io';
+  const GROUPS = [['Relevant Experience', ['experience', 'project']], ['Education', ['education']], ['Skills', ['skill']],
+    ['Certifications', ['certification']], ['Awards', ['award']], ['Languages', ['language']]];
+  const groupOf = sec => GROUPS.findIndex(g => g[1].includes(sec));
+
+  // the CV page, laid out like the PDF CV: name, contact line, then ruled sections
+  const cvHTML = (cv, prof) => {
+    const byId = new Map(prof.map(p => [p.id, p]));
+    const sel = cv.items.filter(i => byId.has(i.id)).map(i => ({ ...byId.get(i.id), bullets: i.bullets || [] }));
+    const row = (l, r) => `<div class="cv-row"><span>${l}</span><b>${esc(r || '')}</b></div>`;
+    const entry = x => `<div class="cv-entry">${row(`<b>${esc(x.title)}</b>`, x.place)}${x.subtitle || x.dates ? row(`<i>${esc(x.subtitle || '')}</i>`, x.dates) : ''}${x.bullets.length ? `<ul>${x.bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>` : ''}</div>`;
+    const line = x => `<li>${esc(x.title)}${x.subtitle ? ` · ${esc(x.subtitle)}` : ''}${x.dates ? ` (${esc(x.dates)})` : ''}</li>`;
+    const body = GROUPS.map(([h, secs], g) => {
+      const xs = sel.filter(x => secs.includes(x.section));
+      if (!xs.length) return '';
+      const inner = g < 2 ? xs.map(entry).join('')
+        : g === 5 ? `<p>${xs.map(x => esc(x.title)).join(' · ')}</p>`
+        : `<ul${g === 2 ? ' class="cv-cols"' : ''}>${xs.map(line).join('')}</ul>`;
+      return `<section><h2>${h}</h2>${inner}</section>`;
+    }).join('');
+    return `<header><h1>Tagaev Rashid</h1>${cv.headline ? `<p class="cv-hl">${esc(cv.headline)}</p>` : ''}<p>${CONTACT}</p></header>`
+      + (cv.summary ? `<section><h2>Summary</h2><p>${esc(cv.summary)}</p></section>` : '') + body;
+  };
+
+  async function kit(o) {
+    const box = $('#kit');
+    const [k, p] = await Promise.all([
+      sb.from('app_kits').select('*').eq('opportunity_id', o.id).maybeSingle(),
+      sb.from('profile_items').select('*').order('sort')]);
+    box.hidden = false;
+    if (k.error || p.error) return fail(box, k.error || p.error);
+    const prof = p.data, master = new Map(prof.map(x => [x.id, x]));
+    const kt = k.data || { cv: {} };
+    const cv = { headline: kt.cv.headline || '', summary: kt.cv.summary || '', items: kt.cv.items || [] };
+    box.innerHTML = `
+      <div class="kit-head">
+        <div><p class="kicker">Application kit · only you see this</p><h2>Email, CV &amp; files</h2></div>
+        <div class="chips" role="group" aria-label="Kit section">
+          <button data-kt="k-email" aria-pressed="true">Email</button><button data-kt="k-cv" aria-pressed="false">CV</button><button data-kt="k-files" aria-pressed="false">Files <span id="k-n"></span></button>
+        </div>
+      </div>
+      <div id="k-email" class="ktab">
+        <form id="mail" class="stack-form mail-form">
+          <label>To <input name="to" type="email" placeholder="Not found yet: apply through the form or the listing"></label>
+          <label>Subject <input name="subject"></label>
+          <label>Body <textarea name="body" rows="18"></textarea></label>
+          <div class="actions">
+            <button class="btn" type="submit">Save</button>
+            <button id="copy-body" class="btn ghost" type="button">Copy text</button>
+            <a id="gmail" class="btn ghost" target="_blank" rel="noopener">Open in Gmail ↗</a>
+            <span class="kit-state" aria-live="polite"></span>
+          </div>
+          <p class="meta">Attach the CV PDF (CV tab → Save as PDF) before you send.</p>
+        </form>
+      </div>
+      <div id="k-cv" class="ktab" hidden>
+        <div class="cv-build">
+          <div class="cv-edit">
+            <label>Headline <input id="cv-headline"></label>
+            <label>Summary <textarea id="cv-summary" rows="4"></textarea></label>
+            <div id="cv-pick"></div>
+            <div class="actions cv-actions">
+              <button id="cv-save" class="btn" type="button">Save</button>
+              <button id="cv-print" class="btn ghost" type="button">Save as PDF</button>
+              <span class="kit-state" aria-live="polite"></span>
+            </div>
+          </div>
+          <div class="cv-side">
+            <p id="cv-over" class="notice error" hidden>Runs past one page. Drop a bullet or an item.</p>
+            <div id="cv-preview" class="cv-preview"><div id="cv-page" class="cv-page"></div></div>
+          </div>
+        </div>
+      </div>
+      <div id="k-files" class="ktab" hidden>
+        <label id="k-drop" class="drop">
+          <input id="k-pick" type="file" multiple hidden>
+          <svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v4h16v-4"/></svg>
+          <strong>Drop files for this application</strong>
+          <span class="meta">Cover letter, transcript, portfolio… each gets a 6-digit code</span>
+        </label>
+        <p id="k-msg" class="meta" aria-live="polite"></p>
+        <div id="k-rows" class="file-list"></div>
+      </div>`;
+    box.querySelectorAll('[data-kt]').forEach(b => b.addEventListener('click', () => {
+      box.querySelectorAll('[data-kt]').forEach(x => x.setAttribute('aria-pressed', x === b));
+      box.querySelectorAll('.ktab').forEach(t => { t.hidden = t.id !== b.dataset.kt; });
+    }));
+
+    // save state: one row per opportunity holds both the email and the CV
+    let dirty = false;
+    const state = t => box.querySelectorAll('.kit-state').forEach(s => { s.textContent = t; });
+    const touch = () => { dirty = true; state('Unsaved changes'); };
+    addEventListener('beforeunload', e => { if (dirty) e.preventDefault(); });
+    const m = $('#mail').elements;
+    const save = async () => {
+      const { error } = await sb.from('app_kits').upsert({
+        opportunity_id: o.id, email_to: m.to.value.trim() || null, email_subject: m.subject.value, email_body: m.body.value, cv });
+      if (error) return alert(error.message);
+      dirty = false; state('Saved'); toast('Kit saved');
+    };
+
+    // email
+    const enc = encodeURIComponent;
+    const gmail = () => { $('#gmail').href = `https://mail.google.com/mail/?view=cm&fs=1&to=${enc(m.to.value.trim())}&su=${enc(m.subject.value)}&body=${enc(m.body.value)}`; };
+    m.to.value = kt.email_to || ''; m.subject.value = kt.email_subject || ''; m.body.value = kt.email_body || '';
+    gmail();
+    $('#mail').addEventListener('input', () => { gmail(); touch(); });
+    $('#mail').addEventListener('submit', e => { e.preventDefault(); save(); });
+    $('#copy-body').addEventListener('click', async () => { await navigator.clipboard.writeText(m.body.value); toast('Email text copied'); });
+
+    // CV builder: tick items, reorder within a section, edit bullets; the preview follows
+    const pick = $('#cv-pick'), pg = $('#cv-page'), pv = $('#cv-preview');
+    const preview = () => {
+      pg.innerHTML = cvHTML(cv, prof);
+      $('#cv-over').hidden = pg.scrollHeight / pg.scrollWidth <= 1123 / 794 + .002;   // A4 at 96 dpi
+    };
+    const drawPick = () => {
+      const open = new Set([...pick.querySelectorAll('details[open] textarea')].map(t => t.dataset.bul));
+      pick.innerHTML = GROUPS.map(([h, secs]) => {
+        const on = cv.items.filter(i => master.has(i.id) && secs.includes(master.get(i.id).section));
+        const off = prof.filter(x => secs.includes(x.section) && !cv.items.some(i => i.id === x.id));
+        const label = (x, checked) => `<label><input type="checkbox" data-pick="${x.id}"${checked ? ' checked' : ''}><span><b>${esc(x.title)}</b>${x.subtitle ? `<span class="meta">${esc(x.subtitle)}</span>` : ''}</span></label>`;
+        return `<fieldset class="pick-group"><legend>${h} · ${on.length}/${on.length + off.length}</legend>` + on.map((i, n) => {
+          const x = master.get(i.id), extra = x.bullets.map((b, j) => [b, j]).filter(([b]) => !i.bullets.includes(b));
+          return `<div class="pick-row on">${label(x, true)}
+            <div class="icon-btns"><button type="button" data-mv="-1" data-id="${x.id}" aria-label="Move up"${n ? '' : ' disabled'}>↑</button><button type="button" data-mv="1" data-id="${x.id}" aria-label="Move down"${n < on.length - 1 ? '' : ' disabled'}>↓</button></div>
+            ${x.bullets.length ? `<details${open.has(x.id) ? ' open' : ''}><summary>${i.bullets.length} of ${x.bullets.length} bullets · edit</summary>
+              <textarea data-bul="${x.id}" rows="${Math.max(4, i.bullets.length * 2 + 1)}" aria-label="Bullets, one per line">${esc(i.bullets.join('\n'))}</textarea>
+              ${extra.map(([b, j]) => `<button type="button" class="addb" data-addb="${x.id}" data-b="${j}">+ ${esc(b)}</button>`).join('')}</details>` : ''}
+          </div>`;
+        }).join('') + off.map(x => `<div class="pick-row">${label(x, false)}</div>`).join('') + '</fieldset>';
+      }).join('');
+    };
+    $('#cv-headline').value = cv.headline; $('#cv-summary').value = cv.summary;
+    $('#cv-headline').addEventListener('input', e => { cv.headline = e.target.value; touch(); preview(); });
+    $('#cv-summary').addEventListener('input', e => { cv.summary = e.target.value; touch(); preview(); });
+    pick.addEventListener('change', e => {
+      const id = e.target.dataset.pick;
+      if (!id) return;
+      if (e.target.checked) cv.items.push({ id, bullets: [...master.get(id).bullets] });
+      else cv.items = cv.items.filter(i => i.id !== id);
+      touch(); drawPick(); preview();
+    });
+    pick.addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.mv) {   // swap with the neighbour in the same CV section
+        const g = groupOf(master.get(b.dataset.id).section);
+        const idx = cv.items.flatMap((it, n) => master.has(it.id) && groupOf(master.get(it.id).section) === g ? [n] : []);
+        const at = idx.indexOf(cv.items.findIndex(i => i.id === b.dataset.id)), a = idx[at], z = idx[at + +b.dataset.mv];
+        [cv.items[a], cv.items[z]] = [cv.items[z], cv.items[a]];
+      } else if (b.dataset.addb) {
+        cv.items.find(i => i.id === b.dataset.addb).bullets.push(master.get(b.dataset.addb).bullets[+b.dataset.b]);
+      } else return;
+      touch(); drawPick(); preview();
+    });
+    pick.addEventListener('input', e => {
+      const id = e.target.dataset.bul;
+      if (!id) return;
+      cv.items.find(i => i.id === id).bullets = e.target.value.split('\n').map(s => s.trim()).filter(Boolean);
+      touch(); preview();
+    });
+    new ResizeObserver(() => { if (pv.clientWidth) { pv.style.setProperty('--s', pv.clientWidth / 794); preview(); } }).observe(pv);
+    $('#cv-save').addEventListener('click', save);
+    $('#cv-print').addEventListener('click', () => {   // the CV alone in a new tab → browser print → Save as PDF
+      const w = open('', '_blank');
+      if (!w) return alert('Allow pop-ups for this site to save the PDF.');
+      const name = `Rashid_Tagaev_CV_${o.title.split(/[—–(]/)[0].trim().replace(/\W+/g, '_')}`;
+      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(name)}</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="${new URL('style.css', location.href).href}"></head>
+        <body class="cv-sheet"><div class="cv-page">${cvHTML(cv, prof)}</div>
+        <script>onload = () => document.fonts.ready.then(() => setTimeout(print, 100));<\/script></body></html>`);
+      w.document.close();
+    });
+    drawPick(); preview();
+
+    // files that belong to this opportunity
+    fileManager({ rows: $('#k-rows'), drop: $('#k-drop'), pick: $('#k-pick'), msg: $('#k-msg'), opp: o.id,
+      after: fs => { $('#k-n').textContent = fs.length || ''; } })();
   }
 
   ({ board, detail, getFile, admin })[page]?.();
