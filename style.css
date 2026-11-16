@@ -406,20 +406,16 @@ footer { display: flex; justify-content: space-between; padding-block: 32px; col
 
 /* contact: the ball is kicked into the goal as you arrive (posed by script.js) */
 .contact { position: relative; }
-.goal-scene { position: absolute; inset: 0; pointer-events: none; }
-.goal { position: absolute; right: 2%; bottom: 70px; width: clamp(150px, 20vw, 280px); overflow: visible; }
+.goal-scene { position: relative; height: clamp(190px, 22vw, 270px); margin-top: 32px; pointer-events: none; }   /* its own strip under the links */
+.goal { position: absolute; right: 4%; bottom: 0; width: clamp(150px, 20vw, 260px); overflow: visible; }
 .goal .net { transform-box: fill-box; transform-origin: center; }
 .ball { position: absolute; left: 0; top: 0; width: 34px; height: 34px; transform-origin: center; filter: drop-shadow(0 8px 8px rgb(0 0 0 / .6)); }
 .goal-text {
-  position: absolute; right: calc(2% + clamp(150px, 20vw, 280px) * .28); bottom: calc(80px + clamp(150px, 20vw, 280px) * .58);
+  position: absolute; right: calc(4% + clamp(150px, 20vw, 260px) * .28); bottom: calc(10px + clamp(150px, 20vw, 260px) * .58);
   font: italic 400 clamp(28px, 4vw, 48px) var(--serif); color: var(--accent);
   opacity: 0; scale: .6; transition: opacity .3s, scale .45s cubic-bezier(.3, 1.6, .5, 1);
 }
 .goal-scene.scored .goal-text { opacity: 1; scale: 1; }
-@media (max-width: 1279px) {   /* no race track here: the goal moves to the empty space above the heading */
-  .goal { top: 24px; bottom: auto; }
-  .goal-text { top: 0; bottom: auto; }
-}
 
 /* boot sequence */
 #boot {
@@ -856,7 +852,7 @@ body.cv-sheet { background: #fff; margin: 0; }
 .cal-nav { display: flex; align-items: center; gap: 6px; }
 .cal-nav h2 { font: 600 20px var(--sans); letter-spacing: -.02em; margin: 0 0 0 8px; }
 .cal-hint { margin: 10px 0; font-size: 12.5px; }
-.lg { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin: 0 4px 0 8px; vertical-align: -1px; }
+.cal-hint .lg { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin: 0 4px 0 8px; vertical-align: -1px; }
 .lg-event { background: color-mix(in srgb, var(--accent) 35%, var(--bg2)); }
 .lg-task { border: 1.5px solid var(--accent); }
 .lg-dl { background: var(--green); }
@@ -877,7 +873,7 @@ body.cv-sheet { background: #fff; margin: 0; }
 .mc.other .mc-n { opacity: .45; }
 .mc-n { border: 0; background: none; color: var(--fg); font: 500 13px var(--mono); padding: 2px 6px; border-radius: 999px; cursor: pointer; }
 .mc.is-today .mc-n { background: var(--accent); color: var(--on-accent); }
-.more { border: 0; background: none; color: var(--muted); font: 11.5px var(--mono); cursor: pointer; padding: 2px 6px; }
+.mc .more { border: 0; background: none; color: var(--muted); font: 11.5px var(--mono); cursor: pointer; padding: 2px 6px; }
 .tg { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--bg2); --hw: 52px; }
 .tg-row { display: grid; grid-template-columns: var(--hw) repeat(var(--n), minmax(0, 1fr)); }
 .tg-head { border-bottom: 1px solid var(--line); }
@@ -980,12 +976,12 @@ body.cv-sheet { background: #fff; margin: 0; }
 .dtable td:not(:first-child), .dtable th:not(:first-child) { text-align: right; font-family: var(--mono); }
 
 /* task dialog */
-.seg { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 999px; width: fit-content; }
-.op-form .seg label { display: block; cursor: pointer; position: relative; }
-.seg input { position: absolute; opacity: 0; }
-.seg span { display: block; padding: 6px 16px; border-radius: 999px; font: 13px var(--sans); color: var(--muted); }
-.seg input:checked + span { background: var(--fg); color: var(--bg); }
-.seg input:focus-visible + span { outline: 2px solid var(--accent); }
+.kind-seg { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 999px; width: fit-content; }
+.op-form .kind-seg label { display: block; cursor: pointer; position: relative; }
+.kind-seg input { position: absolute; opacity: 0; }
+.kind-seg span { display: block; padding: 6px 16px; border-radius: 999px; font: 13px var(--sans); color: var(--muted); }
+.kind-seg input:checked + span { background: var(--fg); color: var(--bg); }
+.kind-seg input:focus-visible + span { outline: 2px solid var(--accent); }
 .grow { flex: 1; }
 .pl-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .push-state { margin: 0; font-size: 15px; }

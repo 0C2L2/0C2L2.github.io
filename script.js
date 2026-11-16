@@ -757,7 +757,7 @@ function buildTrack() {
     d += ` L${from} ${y0} ${curve}`;
     kerbs += `M${from} ${y0} ${curve} `;
     const toward = to > from ? 1 : -1;     // sector board sits beside the track, on the inside of the bend
-    boards += `<text x="${from + toward * 48}" y="${y0 - 6}" text-anchor="${toward > 0 ? 'start' : 'end'}">S${i + 1} · ${SECTORS[i].slice(1).toUpperCase()}</text>`;
+    boards += `<text x="${from + toward * 48}" y="${y0 - 30}" text-anchor="${toward > 0 ? 'start' : 'end'}">S${i + 1} · ${SECTORS[i].slice(1).toUpperCase()}</text>`;
   });
   const endY = docH - 130;
   d += ` L${Rx} ${endY}`;
@@ -768,7 +768,7 @@ function buildTrack() {
     <path class="t-edge" d="${d}"/><path class="t-kerb-w" d="${kerbs}"/><path class="t-kerb" d="${kerbs}"/>
     <path class="t-asphalt" d="${d}"/><path class="t-center" d="${d}"/><path class="t-done" d="${d}"/>
     ${flag(Rx, 172)}<text x="${Rx}" y="196" text-anchor="middle">START</text>
-    ${flag(Rx, endY - 22)}<text x="${Rx}" y="${endY + 8}" text-anchor="middle">FINISH</text>${boards}`;
+    ${flag(Rx, endY - 22)}<text x="${Rx - 36}" y="${endY - 14}" text-anchor="end">FINISH</text>${boards}`;   // beside the track: the parked car covers the line
   const path = trackSvg.querySelector('.t-asphalt'), total = path.getTotalLength(), pts = [];
   for (let l = 0; l <= total; l += 4) { const p = path.getPointAtLength(l); pts.push({ l, x: p.x, y: p.y }); }
   trackSvg.style.display = car.style.display = 'block';
@@ -802,10 +802,11 @@ new ResizeObserver(() => buildTrack()).observe(document.body);
 const goalScene = document.querySelector('.goal-scene');
 const ball = goalScene.querySelector('.ball'), net = goalScene.querySelector('.net'), goalEl = goalScene.querySelector('.goal');
 function kick() {
-  const sec = goalScene.parentElement, r = sec.getBoundingClientRect(), vh = innerHeight;
+  // timing follows the whole contact section; the flight happens inside the goal-scene strip below the links
+  const r = goalScene.parentElement.getBoundingClientRect(), vh = innerHeight;
   const p = reduced ? 1 : Math.min(1, Math.max(0, (vh * .95 - r.top) / (vh * .55)));
-  const W = sec.clientWidth, H = sec.clientHeight, gb = goalEl.getBoundingClientRect();
-  const ex = gb.left - r.left + gb.width * .5, ey = gb.top - r.top + gb.height * .55;
+  const s = goalScene.getBoundingClientRect(), W = s.width, H = s.height, gb = goalEl.getBoundingClientRect();
+  const ex = gb.left - s.left + gb.width * .5, ey = gb.top - s.top + gb.height * .55;
   const sx = W * .1, sy = H * .85, f = Math.min(1, p / .8), e = 1 - (1 - f) ** 2;
   const x = sx + (ex - sx) * e, y = sy + (ey - sy) * e - Math.sin(Math.PI * f) * H * .3;
   ball.style.transform = `translate(${x - 17}px, ${y - 17}px) rotate(${p * 900}deg) scale(${1 - .4 * e})`;
