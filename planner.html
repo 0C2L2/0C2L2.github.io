@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Planner — Rashid Tagaev</title>
+  <meta name="description" content="Private planner.">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=f2921a56">
+  <script>
+    document.documentElement.classList.add('js');
+    try { var t = localStorage.getItem('theme'); if (t && t !== 'violet') document.documentElement.dataset.theme = t; } catch (e) {}
+    try { var m = localStorage.getItem('mode'); if (m === 'light' || m === 'dark') document.documentElement.dataset.mode = m; } catch (e) {}
+  </script>
+</head>
+<body data-page="planner" class="admin-page">
+
+<header class="nav scrolled">
+  <a href="index.html" class="logo">rashid<span>_</span></a>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="opportunities.html">Opportunities</a>
+    <a href="get.html">Get a file</a>
+    <a class="nav-planner" href="planner.html" aria-current="page" hidden>Planner</a>
+    <a class="nav-signin" href="admin.html">Sign in</a>
+    <button class="mode" type="button" aria-label="Colour mode: system"></button>
+    <div class="themes" role="group" aria-label="Colour theme"><button data-t="violet" style="--c:#a78bfa" aria-label="Violet theme"></button><button data-t="ember" style="--c:#ff7a2f" aria-label="Ember theme"></button><button data-t="racing" style="--c:#ff3b47" aria-label="Racing red theme"></button><button data-t="electric" style="--c:#22d3ee" aria-label="Electric cyan theme"></button><button data-t="volt" style="--c:#c6f135" aria-label="Volt lime theme"></button></div>
+  </nav>
+</header>
+
+<main class="wrap page">
+  <section id="pl-gate" class="getbox" hidden>
+    <p class="kicker">Planner</p>
+    <h1 class="sub-h1">Owner <em>only</em></h1>
+    <p class="lead">Sign in to see your tasks, schedule and notes.</p>
+    <a class="btn" href="admin.html">Sign in</a>
+  </section>
+
+  <section id="planner" class="planner" hidden>
+    <div class="pl-top">
+      <div><p class="kicker" id="pl-date"></p><h1 class="sub-h1">Planner</h1></div>
+      <button id="mini-timer" class="mini-timer" type="button" title="Open the focus timer" hidden></button>
+    </div>
+    <div class="chips pl-tabs" role="group" aria-label="Planner views">
+      <button type="button" data-v="today" title="1">Today</button><button type="button" data-v="calendar" title="2">Calendar</button><button type="button" data-v="tasks" title="3">Tasks</button><button type="button" data-v="notes" title="4">Notes</button><button type="button" data-v="focus" title="5">Focus timer</button><button type="button" data-v="stats" title="6">Analytics</button>
+    </div>
+    <div id="pl-view"></div>
+  </section>
+
+  <dialog id="task-dialog" class="op-dialog">
+    <form id="task-form" class="op-form">
+      <div class="dialog-head full"><h2 id="task-h">New task</h2><button class="x-btn" type="button" data-close aria-label="Close">✕</button></div>
+      <input name="id" type="hidden">
+      <div class="full seg" role="radiogroup" aria-label="Type"><label><input type="radio" name="kind" value="task" checked><span>Task</span></label><label><input type="radio" name="kind" value="event"><span>Event</span></label></div>
+      <label class="full">Title <input name="title" required maxlength="200"></label>
+      <label>Date <input name="date" type="date"></label>
+      <label class="task-only">Status <select name="status"><option value="todo">To do</option><option value="doing">Doing</option><option value="done">Done</option></select></label>
+      <label>Start <input name="start" type="time"></label>
+      <label>End <input name="end" type="time"></label>
+      <label class="ev-only">Repeat <select name="repeat"><option value="none">Doesn't repeat</option><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekly">Every week</option><option value="monthly">Every month</option></select></label>
+      <label class="ev-only">Repeat until <input name="repeat_until" type="date"></label>
+      <label>Priority <select name="priority"><option value="1">High</option><option value="2">Normal</option><option value="3">Low</option></select></label>
+      <label class="task-only">Estimate (min) <input name="estimate_min" type="number" min="5" step="5"></label>
+      <label>Tags <input name="tags" placeholder="study, kaist"></label>
+      <label>Opportunity <select name="opportunity_id"><option value="">None</option></select></label>
+      <label class="full task-only">Checklist · one item per line, start with [x] when done <textarea name="checklist" rows="4"></textarea></label>
+      <label class="full">Notes <textarea name="notes" rows="3"></textarea></label>
+      <p id="task-msg" class="meta full" aria-live="polite"></p>
+      <div class="full dialog-actions"><button id="task-del" class="btn ghost del-btn" type="button">Delete</button><span class="grow"></span><button class="btn ghost" type="button" data-close>Cancel</button><button class="btn" type="submit">Save</button></div>
+    </form>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</main>
+
+<footer class="wrap">
+  <span>© 2026 Rashid Tagaev</span>
+  <span class="foot-links"><a href="index.html">Home</a> · <a href="admin.html">Admin</a></span>
+  <button class="mode" type="button" aria-label="Colour mode: system"></button>
+  <div class="themes" role="group" aria-label="Colour theme"><button data-t="violet" style="--c:#a78bfa" aria-label="Violet theme"></button><button data-t="ember" style="--c:#ff7a2f" aria-label="Ember theme"></button><button data-t="racing" style="--c:#ff3b47" aria-label="Racing red theme"></button><button data-t="electric" style="--c:#22d3ee" aria-label="Electric cyan theme"></button><button data-t="volt" style="--c:#c6f135" aria-label="Volt lime theme"></button></div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="theme.js?v=f2921a56"></script>
+<script src="app.js?v=f2921a56"></script>
+<script src="planner.js?v=f2921a56"></script>
+</body>
+</html>

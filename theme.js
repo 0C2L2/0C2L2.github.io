@@ -35,4 +35,5 @@
   let signedIn = false;
   try { signedIn = Object.keys(localStorage).some(k => /^sb-.+-auth-token$/.test(k)); } catch (e) {}
   if (signedIn) document.querySelectorAll('.nav-signin').forEach(a => { a.textContent = 'Dashboard'; });
+  if (signedIn) document.querySelectorAll('.nav-planner').forEach(a => { a.hidden = false; });
 })();

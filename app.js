@@ -619,5 +619,6 @@
       after: fs => { $('#k-n').textContent = fs.length || ''; } })();
   }
 
+  window.App = { sb, esc, md, toast };   // shared with planner.js
   ({ board, detail, getFile, admin })[page]?.();
 })();
