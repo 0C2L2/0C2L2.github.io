@@ -23,6 +23,14 @@
   const fmt = (d, o) => d.toLocaleDateString('en', o);
   const dur = m => m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}` : `${m}m`;
   const hours = d => d.getHours() + d.getMinutes() / 60;
+  const stepDate = (d, rep) => {   // next occurrence in local days (monthly keeps the day of month)
+    const x = new Date(d);
+    if (rep === 'daily') x.setDate(x.getDate() + 1);
+    else if (rep === 'weekdays') do x.setDate(x.getDate() + 1); while (x.getDay() === 0 || x.getDay() === 6);
+    else if (rep === 'weekly') x.setDate(x.getDate() + 7);
+    else if (rep === 'monthly') x.setMonth(x.getMonth() + 1);
+    return x;
+  };
   const relDay = s => {
     const n = Math.round((parseYmd(s) - dayStart(new Date())) / 864e5);
     return n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : n === -1 ? 'Yesterday' : n < 0 ? `${-n}d overdue` : n < 7 ? fmt(parseYmd(s), { weekday: 'long' }) : fmt(parseYmd(s), { month: 'short', day: 'numeric' });
@@ -37,6 +45,18 @@
   const root = () => $('#pl-view');
   const byId = id => tasks.find(t => t.id === id);
   const isOverdue = t => t.kind === 'task' && t.status !== 'done' && t.due_date && t.due_date < todayStr();
+  let hasRemind = false;   // true once supabase/reminders.sql has added the reminder columns
+
+  // when to notify: remind_min before the start (all-day items: before 09:00 that day); repeating events → the next one ahead
+  function remindAt(t, after = new Date()) {
+    if (!hasRemind || t.remind_min == null || t.status === 'done') return null;
+    let base = t.start_at ? new Date(t.start_at) : t.due_date ? new Date(`${t.due_date}T09:00`) : null;
+    if (!base) return null;
+    const at = b => new Date(+b - t.remind_min * 6e4);
+    if (t.kind === 'event' && t.repeat !== 'none') for (let i = 0; at(base) < after && i < 3000; i++) base = stepDate(base, t.repeat);
+    if (t.repeat !== 'none' && t.repeat_until && ymd(base) > t.repeat_until) return null;
+    return at(base) < after ? null : at(base).toISOString();
+  }
 
   async function load() {
     const since = addDays(new Date(), -120).toISOString();
@@ -48,18 +68,20 @@
     const err = t.error || n.error || f.error || o.error;
     if (err) throw err;
     tasks = t.data; notes = n.data; sessions = f.data; opps = o.data;
+    hasRemind = !(await sb.from('tasks').select('remind_min').limit(1)).error;
   }
 
   // ───────── what lands on a given day: timed blocks + all-day items (tasks due, deadlines)
   function itemsOn(day) {
     const d0 = parseYmd(day), out = [];
     for (const t of tasks) {
-      if (t.kind === 'event' && t.start_at && t.repeat !== 'none') {
-        const s = new Date(t.start_at), dow = d0.getDay();
+      if (t.kind === 'event' && t.repeat !== 'none' && (t.start_at || t.due_date)) {
+        const s = t.start_at ? new Date(t.start_at) : parseYmd(t.due_date), dow = d0.getDay();
         if (ymd(s) > day || (t.repeat_until && day > t.repeat_until)) continue;
         const hit = t.repeat === 'daily' || (t.repeat === 'weekdays' && dow > 0 && dow < 6)
           || (t.repeat === 'weekly' && dow === s.getDay()) || (t.repeat === 'monthly' && d0.getDate() === s.getDate());
         if (!hit) continue;
+        if (!t.start_at) { out.push({ t, allDay: true }); continue; }
         const start = new Date(d0); start.setHours(s.getHours(), s.getMinutes());
         out.push({ t, start, end: new Date(+start + (t.end_at ? new Date(t.end_at) - s : 36e5)) });
       } else if (t.start_at) {
@@ -72,7 +94,7 @@
   }
   const chip = (it, time) => it.dl
     ? `<a class="ev ev-dl" href="opportunity.html?id=${it.dl.id}" title="Deadline: ${esc(it.dl.title)}">⚑ ${esc(it.dl.title)}</a>`
-    : `<button type="button" class="ev ev-${it.t.kind} p${it.t.priority}${it.t.status === 'done' ? ' done' : ''}" data-open="${it.t.id}" title="${esc(it.t.title)}">${time && it.start ? `<span>${hm(it.start)}</span>` : ''}${esc(it.t.title)}</button>`;
+    : `<button type="button" class="ev ev-${it.t.kind} p${it.t.priority}${it.t.status === 'done' ? ' done' : ''}" data-open="${it.t.id}" draggable="true" data-dday="${it.t.id}" title="${esc(it.t.title)} · drag to another day">${time && it.start ? `<span>${hm(it.start)}</span>` : ''}${it.t.repeat !== 'none' ? '↻ ' : ''}${esc(it.t.title)}</button>`;
 
   // overlapping blocks sit side by side
   function layout(items) {
@@ -99,8 +121,8 @@
       const blocks = layout(all[k].filter(i => !i.allDay)).map(({ i, col, cols }) => {
         const top = (hours(i.start) - h0) * HOUR, end = ymd(i.end) !== d ? 24 : hours(i.end);
         const h = Math.max(24, (end - hours(i.start)) * HOUR - 3);
-        return `<button type="button" class="blk ev-${i.t.kind} p${i.t.priority}${i.t.status === 'done' ? ' done' : ''}" data-open="${i.t.id}"
-          style="top:${top}px;height:${h}px;left:calc(${col} * 100% / ${cols});width:calc(100% / ${cols} - 4px)"><b>${esc(i.t.title)}</b><span>${hm(i.start)}–${hm(i.end)}</span></button>`;
+        return `<button type="button" class="blk ev-${i.t.kind} p${i.t.priority}${i.t.status === 'done' ? ' done' : ''}" data-open="${i.t.id}" data-s="${+i.start}" data-e="${+i.end}" title="Drag to move · drag the bottom edge to resize"
+          style="top:${top}px;height:${h}px;left:calc(${col} * 100% / ${cols});width:calc(100% / ${cols} - 4px)"><b>${i.t.repeat !== 'none' ? '↻ ' : ''}${esc(i.t.title)}</b><span>${hm(i.start)}–${hm(i.end)}</span><i class="rs" aria-hidden="true"></i></button>`;
       }).join('');
       const line = d === nowDay && hours(now) >= h0 && hours(now) < h1 ? `<i class="now" style="top:${(hours(now) - h0) * HOUR}px"></i>` : '';
       return { d, allDay: all[k].filter(i => i.allDay).map(i => chip(i)).join(''), body: `<div class="tg-col${d === nowDay ? ' is-today' : ''}" data-slot="${d}" data-h0="${h0}" style="height:${H}px">${blocks}${line}</div>` };
@@ -137,7 +159,7 @@
       <label class="tick"><input type="checkbox" data-done="${t.id}"${t.status === 'done' ? ' checked' : ''} aria-label="Done"><span></span></label>
       <button type="button" class="t-main" data-open="${t.id}">
         <b>${esc(t.title)}</b>
-        <span class="t-meta">${when ? `<span class="due-t">${esc(when)}</span>` : ''}${t.priority === 1 ? '<span class="flag">High</span>' : ''}${t.status === 'doing' ? '<span class="doing">Doing</span>' : ''}${cl.length ? `<span>☑ ${done}/${cl.length}</span>` : ''}${t.estimate_min ? `<span>~${dur(t.estimate_min)}</span>` : ''}${opp ? `<span>⚑ ${esc(opp.title.split(' — ')[0])}</span>` : ''}${t.tags.map(g => `<span class="tag">#${esc(g)}</span>`).join('')}</span>
+        <span class="t-meta">${when ? `<span class="due-t">${esc(when)}</span>` : ''}${t.priority === 1 ? '<span class="flag">High</span>' : ''}${t.status === 'doing' ? '<span class="doing">Doing</span>' : ''}${t.repeat !== 'none' ? `<span>↻ ${t.repeat}</span>` : ''}${t.remind_at ? '<span title="Reminder set">🔔</span>' : ''}${cl.length ? `<span>☑ ${done}/${cl.length}</span>` : ''}${t.estimate_min ? `<span>~${dur(t.estimate_min)}</span>` : ''}${opp ? `<span>⚑ ${esc(opp.title.split(' — ')[0])}</span>` : ''}${t.tags.map(g => `<span class="tag">#${esc(g)}</span>`).join('')}</span>
       </button>
       ${t.status !== 'done' ? `<button type="button" class="t-play" data-focus="${t.id}" title="Focus on this" aria-label="Start focus timer">▶</button>` : ''}
     </div>`;
@@ -178,12 +200,54 @@
     tasks.push(data); toast('Task added'); render();
   }
 
+  const withRemind = (t, patch) => hasRemind ? { ...patch, remind_at: remindAt({ ...t, ...patch }) } : patch;
   async function setStatus(id, status) {
-    const t = byId(id), patch = { status, done_at: status === 'done' ? new Date().toISOString() : null };
+    const t = byId(id);
+    if (status === 'done' && t.kind === 'task' && t.repeat !== 'none' && (t.due_date || t.start_at)) return completeRepeating(t);
+    const patch = withRemind(t, { status, done_at: status === 'done' ? new Date().toISOString() : null });
     const { error } = await sb.from('tasks').update(patch).eq('id', id);
     if (error) { toast(error.message); return render(); }
     Object.assign(t, patch); render();
     if (status === 'done') toast('Done ✓');
+  }
+
+  // a repeating task: keep a finished copy for history, then move the task itself to its next date
+  async function completeRepeating(t) {
+    const now = new Date(), today = dayStart(now), cur = t.start_at ? new Date(t.start_at) : parseYmd(t.due_date);
+    let next = stepDate(cur, t.repeat);
+    if (dayStart(cur) <= today) while (dayStart(next) <= today) next = stepDate(next, t.repeat);   // overdue → skip to the next one after today
+    const ended = !!(t.repeat_until && ymd(next) > t.repeat_until);
+    const copy = { kind: 'task', title: t.title, notes: t.notes, priority: t.priority, tags: t.tags, opportunity_id: t.opportunity_id, estimate_min: t.estimate_min,
+      due_date: t.due_date, start_at: t.start_at, end_at: t.end_at, checklist: checklistOf(t), status: 'done', done_at: now.toISOString() };
+    const patch = ended ? withRemind(t, { status: 'done', done_at: now.toISOString() }) : withRemind(t, {
+      status: 'todo', done_at: null, checklist: checklistOf(t).map(c => ({ ...c, done: false })),
+      ...(t.start_at ? { start_at: next.toISOString(), end_at: t.end_at ? new Date(+next + (new Date(t.end_at) - cur)).toISOString() : null } : { due_date: ymd(next) }) });
+    const [a, b] = await Promise.all([ended ? { data: null } : sb.from('tasks').insert(copy).select().single(), sb.from('tasks').update(patch).eq('id', t.id)]);
+    if (a.error || b.error) { toast((a.error || b.error).message); return render(); }
+    if (a.data) tasks.push(a.data);
+    Object.assign(t, patch); render();
+    toast(ended ? 'Done ✓ (that was the last one)' : `Done ✓ · next: ${relDay(ymd(next))}`);
+  }
+
+  // calendar moves: shift a timed item (a repeating event moves the whole series), or move an item to another day
+  async function savePatch(t, patch, msg) {
+    patch = withRemind(t, patch);
+    const { error } = await sb.from('tasks').update(patch).eq('id', t.id);
+    if (error) { toast(error.message); return render(); }
+    Object.assign(t, patch); render(); toast(msg);
+  }
+  function shiftTimed(t, dStart, dEnd) {
+    const s = new Date(t.start_at), e = t.end_at ? new Date(t.end_at) : new Date(+s + (t.estimate_min || 60) * 6e4);
+    const ns = new Date(+s + dStart), ne = new Date(+e + dEnd);
+    if (ne <= ns || (!dStart && !dEnd)) return render();
+    return savePatch(t, { start_at: ns.toISOString(), end_at: ne.toISOString() }, t.repeat !== 'none' ? 'Moved · every repeat follows' : `Moved to ${fmt(ns, { weekday: 'short' })} ${hm(ns)}–${hm(ne)}`);
+  }
+  function moveDay(t, from, to) {
+    const days = Math.round((parseYmd(to) - parseYmd(from)) / 864e5);
+    if (!days) return;
+    const shift = iso => { if (!iso) return null; const d = new Date(iso); d.setDate(d.getDate() + days); return d.toISOString(); };
+    const patch = t.start_at ? { start_at: shift(t.start_at), end_at: shift(t.end_at) } : { due_date: ymd(addDays(parseYmd(t.due_date), days)) };
+    return savePatch(t, patch, t.repeat !== 'none' ? 'Moved · every repeat follows' : `Moved to ${relDay(to)}`);
   }
 
   // ───────── views
@@ -463,6 +527,8 @@
     tf.elements.priority.value = String(t.priority || 2);
     tf.elements.repeat.value = t.repeat || 'none';
     tf.elements.repeat_until.value = t.repeat_until || '';
+    tf.elements.remind_min.value = t.remind_min ?? '';
+    tf.elements.remind_min.closest('label').hidden = !hasRemind;
     tf.elements.estimate_min.value = t.estimate_min || '';
     tf.elements.tags.value = (t.tags || []).join(', ');
     tf.elements.opportunity_id.innerHTML = '<option value="">None</option>' + opps.map(o => `<option value="${o.id}">${esc(o.title)}</option>`).join('');
@@ -494,12 +560,15 @@
     const start = date && st ? new Date(`${date}T${st}`) : null;
     let end = start && en ? new Date(`${date}T${en}`) : null;
     if (end && end <= start) end = addDays(end, 1);   // e.g. 23:00 – 01:00
-    const status = kind === 'event' ? 'todo' : f.status.value, prev = id ? byId(id) : null;
+    const prev = id ? byId(id) : null;
+    // ticking "done" on a repeating task in here behaves like the checkbox: log it and move to the next date
+    const finishing = kind === 'task' && f.status.value === 'done' && date && f.repeat.value !== 'none' && prev?.status !== 'done';
+    const status = kind === 'event' || finishing ? 'todo' : f.status.value;
     const row = {
       kind, title: f.title.value.trim(), status, priority: +f.priority.value,
       due_date: start ? null : date, start_at: start && start.toISOString(), end_at: end && end.toISOString(),
-      repeat: kind === 'event' && start ? f.repeat.value : 'none',
-      repeat_until: kind === 'event' && start && f.repeat.value !== 'none' ? (f.repeat_until.value || null) : null,
+      repeat: date ? f.repeat.value : 'none',
+      repeat_until: date && f.repeat.value !== 'none' ? (f.repeat_until.value || null) : null,
       estimate_min: f.estimate_min.value ? +f.estimate_min.value : null,
       tags: f.tags.value.split(',').map(x => x.trim().replace(/^#/, '').toLowerCase()).filter(Boolean),
       opportunity_id: f.opportunity_id.value || null,
@@ -507,10 +576,13 @@
       notes: f.notes.value.trim() || null,
       done_at: status === 'done' ? (prev?.done_at || new Date().toISOString()) : null,
     };
+    if (hasRemind) { row.remind_min = f.remind_min.value === '' ? null : +f.remind_min.value; row.remind_at = remindAt(row); }
     const { data, error } = await (id ? sb.from('tasks').update(row).eq('id', id) : sb.from('tasks').insert(row)).select().single();
     if (error) { $('#task-msg').textContent = error.message; return; }
     if (id) Object.assign(prev, data); else tasks.push(data);
-    dlg.close(); toast(id ? 'Saved' : kind === 'event' ? 'Event added' : 'Task added'); render();
+    dlg.close();
+    if (finishing) return completeRepeating(byId(data.id));
+    toast(id ? 'Saved' : kind === 'event' ? 'Event added' : 'Task added'); render();
   });
   $('#task-del').addEventListener('click', async () => {
     const id = tf.elements.id.value;
@@ -535,7 +607,38 @@
     $$('[data-v]').forEach(b => b.addEventListener('click', () => go(b.dataset.v)));
     $('#mini-timer').addEventListener('click', () => go('focus'));
     const r = root();
+    // calendar blocks: drag to move (15-min steps, across days), drag the bottom edge to resize. Pointer events → mouse + touch.
+    let drag = null, justDragged = false;
+    r.addEventListener('pointerdown', e => {
+      const blk = e.target.closest('.blk'), t = blk && byId(blk.dataset.open);
+      if (!t || e.button !== 0) return;
+      drag = { blk, t, x0: e.clientX, y0: e.clientY, top: blk.offsetTop, h: blk.offsetHeight, resize: !!e.target.closest('.rs'), moved: false };
+    });
+    addEventListener('pointermove', e => {
+      if (!drag) return;
+      const dy = e.clientY - drag.y0, q = HOUR / 4, snap = px => Math.round(px / q) * q;
+      if (!drag.moved && Math.hypot(e.clientX - drag.x0, dy) < 6) return;
+      if (!drag.moved) { drag.moved = true; drag.blk.classList.add('dragging'); }
+      e.preventDefault();
+      if (drag.resize) { drag.blk.style.height = `${Math.max(q, snap(drag.h + 3 + dy)) - 3}px`; return; }
+      const col = $$('.tg-col', r).find(c => { const b = c.getBoundingClientRect(); return e.clientX >= b.left && e.clientX < b.right; }) || drag.blk.parentElement;
+      if (col !== drag.blk.parentElement) col.append(drag.blk);
+      Object.assign(drag.blk.style, { left: '0', width: 'calc(100% - 4px)', top: `${Math.max(0, snap(drag.top + dy))}px` });
+    });
+    addEventListener('pointerup', () => {
+      const d = drag; drag = null;
+      if (!d || !d.moved) return;
+      justDragged = true; setTimeout(() => { justDragged = false; }, 0);   // swallow the click that follows the drag
+      const s = +d.blk.dataset.s, en = +d.blk.dataset.e, col = d.blk.parentElement;
+      if (d.resize) return shiftTimed(d.t, 0, s + (parseFloat(d.blk.style.height) + 3) / HOUR * 36e5 - en);
+      const ns = parseYmd(col.dataset.slot);
+      ns.setMinutes(Math.round((+col.dataset.h0 + parseFloat(d.blk.style.top) / HOUR) * 60));
+      shiftTimed(d.t, +ns - s, +ns - s);
+    });
+    addEventListener('pointercancel', () => { if (drag) { drag = null; render(); } });
+
     r.addEventListener('click', async e => {
+      if (justDragged) return;
       const el = e.target.closest('button, a, [data-slot], [data-newday]');
       if (!el || el.tagName === 'A') return;
       const d = el.dataset;
@@ -606,17 +709,23 @@
       const v = e.target.elements.q.value.trim();
       if (v) quickAdd(v);
     });
-    // board drag & drop
-    r.addEventListener('dragstart', e => { const c = e.target.closest?.('[data-drag]'); if (c) { e.dataTransfer.setData('text/plain', c.dataset.drag); c.classList.add('dragging'); } });
-    r.addEventListener('dragend', e => e.target.closest?.('[data-drag]')?.classList.remove('dragging'));
-    r.addEventListener('dragover', e => { const col = e.target.closest?.('[data-drop]'); if (col) { e.preventDefault(); col.classList.add('over'); } });
-    r.addEventListener('dragleave', e => e.target.closest?.('[data-drop]')?.classList.remove('over'));
+    // drag & drop: board cards between columns; calendar chips (month cells, all-day row) between days
+    r.addEventListener('dragstart', e => {
+      const c = e.target.closest?.('[data-drag]'), ch = e.target.closest?.('[data-dday]');
+      if (c) { e.dataTransfer.setData('text/plain', c.dataset.drag); c.classList.add('dragging'); }
+      else if (ch) { e.dataTransfer.setData('text/plain', `day:${ch.dataset.dday}|${ch.closest('[data-newday]')?.dataset.newday || ''}`); ch.classList.add('dragging'); }
+    });
+    r.addEventListener('dragend', e => e.target.closest?.('[data-drag], [data-dday]')?.classList.remove('dragging'));
+    const dropZone = e => e.target.closest?.('[data-drop], [data-newday]');
+    r.addEventListener('dragover', e => { const z = dropZone(e); if (z) { e.preventDefault(); z.classList.add('over'); } });
+    r.addEventListener('dragleave', e => dropZone(e)?.classList.remove('over'));
     r.addEventListener('drop', e => {
-      const col = e.target.closest?.('[data-drop]');
-      if (!col) return;
-      e.preventDefault(); col.classList.remove('over');
-      const id = e.dataTransfer.getData('text/plain'), t = byId(id);
-      if (t && t.status !== col.dataset.drop) setStatus(id, col.dataset.drop);
+      const z = dropZone(e);
+      if (!z) return;
+      e.preventDefault(); z.classList.remove('over');
+      const v = e.dataTransfer.getData('text/plain');
+      if (z.dataset.drop && !v.startsWith('day:')) { const t = byId(v); if (t && t.status !== z.dataset.drop) setStatus(v, z.dataset.drop); }
+      if (z.dataset.newday && v.startsWith('day:')) { const [id, from] = v.slice(4).split('|'), t = byId(id); if (t && from) moveDay(t, from, z.dataset.newday); }
     });
     // chart hover tips
     r.addEventListener('mousemove', e => {
@@ -640,6 +749,43 @@
     setInterval(() => { if ($('.now') && !dlg.open && !document.activeElement?.matches('input, textarea')) render(); }, 6e4);   // move the "now" line
   }
 
+  // ───────── reminders on this device (Web Push; sent by the send-reminders Edge Function)
+  const VAPID_PUBLIC = 'BAw-O2sJD5Gy8R-JBWyX_Ykog43JrH4V_XmvRXD3EM38aUxZkQafn41Uuv89c12-lR73Ai4x4C0dKsC1FilU2T4';
+  const pushOk = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const b64bytes = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+  async function pushSub() { try { const reg = await navigator.serviceWorker.getRegistration(); return reg ? await reg.pushManager.getSubscription() : null; } catch (e) { return null; } }
+  async function pushUi() {
+    const ok = pushOk(), sub = ok ? await pushSub() : null;
+    $('#push-btn').textContent = sub ? '🔔 Reminders on' : '🔕 Reminders off';
+    $('#push-state').textContent = !hasRemind ? 'Run supabase/reminders.sql first (see the setup steps).'
+      : !ok ? 'This browser can’t receive push notifications. On iPhone, add the site to the Home Screen first.'
+      : sub ? 'On for this device. Set a reminder in any task or event.'
+      : Notification.permission === 'denied' ? 'Notifications are blocked for this site. Allow them in the browser’s site settings.' : 'Off for this device.';
+    $('#push-on').hidden = !ok || !!sub || !hasRemind; $('#push-off').hidden = !sub; $('#push-test').hidden = !sub;
+  }
+  async function pushOn() {
+    try {
+      if (await Notification.requestPermission() !== 'granted') return pushUi();
+      const reg = await navigator.serviceWorker.register('sw.js');
+      await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64bytes(VAPID_PUBLIC) });
+      const j = sub.toJSON();
+      const { error } = await sb.from('push_subs').upsert({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, device: navigator.userAgent.slice(0, 160) });
+      if (error) { await sub.unsubscribe(); throw error; }
+      toast('Reminders on for this device');
+    } catch (e) { toast(`Could not turn on reminders: ${e.message || e}`); }
+    pushUi();
+  }
+  async function pushOff() {
+    const sub = await pushSub();
+    if (sub) { await sb.from('push_subs').delete().eq('endpoint', sub.endpoint); await sub.unsubscribe(); }
+    toast('Reminders off for this device'); pushUi();
+  }
+  async function pushTest() {
+    const { data, error } = await sb.functions.invoke('send-reminders?test=1', { body: {} });
+    toast(error ? `Test failed: ${error.message}. Is the send-reminders function deployed with its secrets?` : `Test sent to ${data.sent} device${data.sent === 1 ? '' : 's'}`);
+  }
+
   // ───────── start (owner only)
   async function start() {
     $('#pl-gate').hidden = true; $('#planner').hidden = false;
@@ -652,6 +798,13 @@
       return;
     }
     wire(); render();
+    const pd = $('#push-dialog');
+    $('#push-btn').hidden = false;
+    $('#push-btn').addEventListener('click', () => { pushUi(); pd.showModal(); });
+    $('#push-on').addEventListener('click', pushOn);
+    $('#push-off').addEventListener('click', pushOff);
+    $('#push-test').addEventListener('click', pushTest);
+    pushUi();
   }
   sb.auth.getSession().then(({ data }) => {
     if (data.session) start();

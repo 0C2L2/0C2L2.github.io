@@ -10,7 +10,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=f2921a56">
+  <link rel="stylesheet" href="style.css?v=227391e5">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0b0b0c">
   <script>
     document.documentElement.classList.add('js');
     try { var t = localStorage.getItem('theme'); if (t && t !== 'violet') document.documentElement.dataset.theme = t; } catch (e) {}
@@ -43,7 +46,10 @@
   <section id="planner" class="planner" hidden>
     <div class="pl-top">
       <div><p class="kicker" id="pl-date"></p><h1 class="sub-h1">Planner</h1></div>
-      <button id="mini-timer" class="mini-timer" type="button" title="Open the focus timer" hidden></button>
+      <div class="pl-actions">
+        <button id="push-btn" class="btn btn-sm ghost" type="button" hidden>🔕 Reminders off</button>
+        <button id="mini-timer" class="mini-timer" type="button" title="Open the focus timer" hidden></button>
+      </div>
     </div>
     <div class="chips pl-tabs" role="group" aria-label="Planner views">
       <button type="button" data-v="today" title="1">Today</button><button type="button" data-v="calendar" title="2">Calendar</button><button type="button" data-v="tasks" title="3">Tasks</button><button type="button" data-v="notes" title="4">Notes</button><button type="button" data-v="focus" title="5">Focus timer</button><button type="button" data-v="stats" title="6">Analytics</button>
@@ -61,8 +67,9 @@
       <label class="task-only">Status <select name="status"><option value="todo">To do</option><option value="doing">Doing</option><option value="done">Done</option></select></label>
       <label>Start <input name="start" type="time"></label>
       <label>End <input name="end" type="time"></label>
-      <label class="ev-only">Repeat <select name="repeat"><option value="none">Doesn't repeat</option><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekly">Every week</option><option value="monthly">Every month</option></select></label>
-      <label class="ev-only">Repeat until <input name="repeat_until" type="date"></label>
+      <label>Repeat <select name="repeat"><option value="none">Doesn't repeat</option><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekly">Every week</option><option value="monthly">Every month</option></select></label>
+      <label>Repeat until <input name="repeat_until" type="date"></label>
+      <label>Reminder <select name="remind_min"><option value="">None</option><option value="0">At the start</option><option value="5">5 min before</option><option value="10">10 min before</option><option value="15">15 min before</option><option value="30">30 min before</option><option value="60">1 hour before</option><option value="1440">1 day before</option></select></label>
       <label>Priority <select name="priority"><option value="1">High</option><option value="2">Normal</option><option value="3">Low</option></select></label>
       <label class="task-only">Estimate (min) <input name="estimate_min" type="number" min="5" step="5"></label>
       <label>Tags <input name="tags" placeholder="study, kaist"></label>
@@ -72,6 +79,15 @@
       <p id="task-msg" class="meta full" aria-live="polite"></p>
       <div class="full dialog-actions"><button id="task-del" class="btn ghost del-btn" type="button">Delete</button><span class="grow"></span><button class="btn ghost" type="button" data-close>Cancel</button><button class="btn" type="submit">Save</button></div>
     </form>
+  </dialog>
+  <dialog id="push-dialog" class="op-dialog">
+    <div class="op-form">
+      <div class="dialog-head full"><h2>Reminders</h2><button class="x-btn" type="button" data-close aria-label="Close">✕</button></div>
+      <p id="push-state" class="full push-state"></p>
+      <p class="full meta">Pick a reminder in any task or event. Devices that have reminders on get a notification even when the planner is closed. All-day items remind before 9:00.</p>
+      <p class="full meta">iPhone: open the site in Safari → Share → Add to Home Screen, open it from there, then turn reminders on.</p>
+      <div class="full dialog-actions"><button id="push-off" class="btn ghost" type="button" hidden>Turn off here</button><span class="grow"></span><button id="push-test" class="btn ghost" type="button" hidden>Send a test</button><button id="push-on" class="btn" type="button" hidden>Turn on for this device</button></div>
+    </div>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </main>
@@ -84,8 +100,8 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="theme.js?v=f2921a56"></script>
-<script src="app.js?v=f2921a56"></script>
-<script src="planner.js?v=f2921a56"></script>
+<script src="theme.js?v=227391e5"></script>
+<script src="app.js?v=227391e5"></script>
+<script src="planner.js?v=227391e5"></script>
 </body>
 </html>

@@ -987,6 +987,18 @@ body.cv-sheet { background: #fff; margin: 0; }
 .seg input:checked + span { background: var(--fg); color: var(--bg); }
 .seg input:focus-visible + span { outline: 2px solid var(--accent); }
 .grow { flex: 1; }
+.pl-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.push-state { margin: 0; font-size: 15px; }
+
+/* calendar drag & drop */
+.blk { touch-action: none; user-select: none; -webkit-user-select: none; }
+.blk.dragging { z-index: 5; cursor: grabbing; box-shadow: 0 10px 28px -8px rgb(0 0 0 / .5); outline: 2px solid var(--accent); }
+.blk .rs { position: absolute; left: 0; right: 0; bottom: 0; height: 8px; cursor: ns-resize; }
+.blk .rs::after { content: ""; position: absolute; left: 50%; bottom: 3px; width: 18px; height: 2px; margin-left: -9px; border-radius: 2px; background: currentColor; opacity: 0; }
+.blk:hover .rs::after { opacity: .35; }
+.ev[draggable="true"] { cursor: grab; }
+.ev.dragging { opacity: .4; }
+.mc.over, .tg-all > div.over { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .op-form .del-btn:hover { color: #ff5f57; border-color: rgb(255 95 87 / .5); }
 
 @media (max-width: 960px) {
