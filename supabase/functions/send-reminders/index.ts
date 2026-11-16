@@ -72,10 +72,13 @@ const before = m => m >= 1440 ? `${m / 1440} day${m === 1440 ? '' : 's'}` : m >=
 
 async function sendAll(subs, data) {
   let sent = 0;
-  for (const s of subs) {
+  for (const s of [...subs]) {
     // private devices (e.g. a university PC) get no task details on the lock screen / notification centre
     const r = await sendPush(s, s.private && data.tag !== 'test' ? { ...data, title: 'Planner', body: 'You have a reminder' } : data, VAPID);
-    if (r.status === 404 || r.status === 410) await db(`push_subs?endpoint=eq.${encodeURIComponent(s.endpoint)}`, 'DELETE');   // device unsubscribed
+    if (r.status === 404 || r.status === 410) {   // device unsubscribed: forget it (and skip it for the rest of this run)
+      await db(`push_subs?endpoint=eq.${encodeURIComponent(s.endpoint)}`, 'DELETE');
+      subs.splice(subs.indexOf(s), 1);
+    }
     else if (r.ok) sent++;
     else console.error('push failed', r.status, await r.text());
   }
@@ -112,7 +115,17 @@ Deno.serve(async req => {
       }
       await db(`tasks?id=eq.${t.id}`, 'PATCH', { remind_at: next });
     }
-    return json({ due: due.length, sent });
+    // new and cancelled bookings from the public "book a call" page → tell the owner's devices
+    let bk = [];
+    try { bk = await db('bookings?select=id,name,start_at,minutes,status&or=(and(status.eq.confirmed,notified.eq.false),and(status.eq.cancelled,cancel_notified.eq.false))'); }
+    catch (e) { bk = []; }   // booking.sql not run yet
+    for (const b of bk) {
+      const when = new Date(b.start_at).toLocaleString('en-GB', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      const cancelled = b.status === 'cancelled';
+      if (subs.length) sent += await sendAll(subs, { title: `${cancelled ? 'Call cancelled' : 'New call booked'}: ${b.name}`, body: `${when} · ${b.minutes} min`, url: 'planner.html', tag: `bk-${b.id}` });
+      await db(`bookings?id=eq.${b.id}`, 'PATCH', cancelled ? { notified: true, cancel_notified: true } : { notified: true });
+    }
+    return json({ due: due.length, sent, bookings: bk.length });
   } catch (e) {
     console.error(e);
     return json({ error: String(e && e.message || e) }, 500);

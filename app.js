@@ -637,6 +637,151 @@
       after: fs => { $('#k-n').textContent = fs.length || ''; } })();
   }
 
+  // ───────────────────────── /book.html (public: book a call, like Calendly)
+  async function book() {
+    const box = $('#book'), qs = new URLSearchParams(location.search), myTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const p2 = n => String(n).padStart(2, '0'), localYmd = d => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+    const tm = d => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const longDay = d => d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+    const rpcErr = e => (e && e.message || String(e)).replace(/^.*?:\s(?=[A-Z])/, '');
+    if (qs.get('cancel')) return cancelView(qs.get('cancel'));
+
+    const { data: S, error } = await sb.rpc('get_booking_page');
+    if (error || !S || !S.enabled) {
+      box.innerHTML = `<div class="card book-closed"><p class="kicker">Book a call</p><h1 class="sub-h1">Booking is <em>closed</em> right now</h1>
+        <p class="lead">You can still reach me by email: <a href="mailto:rashidtagaev01@gmail.com">rashidtagaev01@gmail.com</a></p></div>`;
+      return;
+    }
+    // a wall-clock time in the owner's zone → an instant (handles any IANA zone, DST included)
+    const offset = t => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: S.tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(t)).map(x => [x.type, x.value])); return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute) - Math.floor(t / 6e4) * 6e4; };
+    const zoned = (y, m, d, h, mi) => { const g = Date.UTC(y, m, d, h, mi); return new Date(g - offset(g - offset(g))); };
+    const today = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: S.tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).map(x => [x.type, x.value]));
+    let dur = S.durations.includes(30) ? 30 : S.durations[0], busy = [], day = null, month = null, picked = null, done = null;
+    const loadBusy = async () => {
+      const { data } = await sb.rpc('busy_slots', { p_from: new Date().toISOString(), p_to: new Date(Date.now() + (S.max_days + 1) * 864e5).toISOString() });
+      busy = (data || []).map(b => [Date.parse(b.start_at), Date.parse(b.end_at)]);
+    };
+    // every free start time, grouped by the visitor's own calendar day
+    const slotsByDay = () => {
+      const out = {}, step = dur >= 30 ? 30 : 15, earliest = Date.now() + S.min_notice_min * 6e4, latest = Date.now() + S.max_days * 864e5, buf = S.buffer_min * 6e4;
+      for (let k = 0; k <= S.max_days; k++) {
+        const base = new Date(Date.UTC(+today.year, +today.month - 1, +today.day + k)), y = base.getUTCFullYear(), m = base.getUTCMonth(), d = base.getUTCDate();
+        for (const [a, b] of (S.hours[base.getUTCDay() || 7] || [])) {
+          const [ah, am] = a.split(':').map(Number), [bh, bm] = b.split(':').map(Number);
+          for (let t = ah * 60 + am; t + dur <= bh * 60 + bm; t += step) {
+            const s = zoned(y, m, d, Math.floor(t / 60), t % 60), e = +s + dur * 6e4;
+            if (+s < earliest || +s > latest || busy.some(([bs, be]) => bs < e + buf && be > +s - buf)) continue;
+            (out[localYmd(s)] ||= []).push(s);
+          }
+        }
+      }
+      return out;
+    };
+
+    const info = () => `<aside class="card book-info">
+        <span class="book-avatar">R</span>
+        <p class="kicker">Rashid Tagaev</p>
+        <h1>${esc(S.title)}</h1>
+        <p class="lead">${esc(S.intro)}</p>
+        <div class="chips" role="group" aria-label="Call length">${S.durations.map(n => `<button type="button" data-dur="${n}" aria-pressed="${n === dur}"${picked || done ? ' disabled' : ''}>${n} min</button>`).join('')}</div>
+        <p class="book-fact"><span aria-hidden="true">📍</span> ${esc(S.location)}</p>
+        <p class="book-fact"><span aria-hidden="true">🌐</span> Times are in your time zone (${esc(myTz)})</p>
+      </aside>`;
+    const picker = () => {
+      const slots = slotsByDay(), days = Object.keys(slots).sort();
+      if (!day || !slots[day]) day = days[0] || null;
+      if (!month) month = day ? new Date(`${day}T00:00`) : new Date();
+      const first = new Date(month.getFullYear(), month.getMonth(), 1), lead = (first.getDay() + 6) % 7, count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+      const cells = Array.from({ length: lead }, () => '<span></span>').join('') + Array.from({ length: count }, (_, i) => {
+        const ds = localYmd(new Date(month.getFullYear(), month.getMonth(), i + 1)), n = (slots[ds] || []).length;
+        return `<button type="button" class="bk-day${ds === day ? ' on' : ''}" data-day="${ds}"${n ? '' : ' disabled'} aria-label="${ds}${n ? `, ${n} times free` : ', nothing free'}">${i + 1}</button>`;
+      }).join('');
+      const list = day ? slots[day].map(s => `<button type="button" class="bk-slot" data-slot="${+s}">${tm(s)}</button>`).join('') : '';
+      return `<div class="bk-cal">
+          <div class="bk-month"><button type="button" class="x-btn" data-mon="-1" aria-label="Previous month">‹</button><b>${month.toLocaleDateString([], { month: 'long', year: 'numeric' })}</b><button type="button" class="x-btn" data-mon="1" aria-label="Next month">›</button></div>
+          <div class="bk-grid">${['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(w => `<span class="bk-wd">${w}</span>`).join('')}${cells}</div>
+        </div>
+        <div class="bk-times">${day ? `<p class="bk-times-h">${longDay(new Date(`${day}T00:00`))}</p><div class="bk-slots">${list}</div>`
+          : `<p class="meta">No free times in the next ${S.max_days} days. Email me at <a href="mailto:rashidtagaev01@gmail.com">rashidtagaev01@gmail.com</a>.</p>`}</div>`;
+    };
+    const form = () => `<form class="bk-form stack-form" id="bk-form">
+        <button type="button" class="back bk-back" data-back>← Pick another time</button>
+        <p class="bk-when">📅 <b>${longDay(picked)}</b> · ${tm(picked)}–${tm(new Date(+picked + dur * 6e4))} <span class="meta">(${dur} min)</span></p>
+        <label>Your name <input name="name" required minlength="2" maxlength="80" autocomplete="name"></label>
+        <label>Email <input name="email" type="email" required maxlength="120" autocomplete="email"></label>
+        <label>What would you like to talk about? <span class="meta">(optional)</span><textarea name="note" rows="4" maxlength="1000"></textarea></label>
+        <button class="btn btn-wide" type="submit">Confirm booking</button>
+        <p class="meta" id="bk-msg" aria-live="polite"></p>
+      </form>`;
+    const ics = b => {
+      const z = d => new Date(d).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''), t = s => String(s || '').replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n');
+      return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//0c2l2.github.io//book//EN', 'BEGIN:VEVENT', `UID:${b.id}@0c2l2.github.io`, `DTSTAMP:${z(Date.now())}`, `DTSTART:${z(b.start_at)}`, `DTEND:${z(b.end_at)}`,
+        'SUMMARY:Call with Rashid Tagaev', `DESCRIPTION:${t([b.location_detail || b.location, `Cancel: ${b.cancelUrl}`].join('\n'))}`, `LOCATION:${t(b.location_detail || b.location)}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    };
+    const confirmation = () => {
+      const s = new Date(done.start_at), e = new Date(done.end_at), z = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+      const where = done.location_detail || done.location, link = /^https?:\/\//.test(where || '') ? `<a href="${esc(where)}" target="_blank" rel="noopener">${esc(where)}</a>` : esc(where);
+      const gcal = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent('Call with Rashid Tagaev')}&dates=${z(s)}/${z(e)}&details=${encodeURIComponent(`${where}\n\nCancel: ${done.cancelUrl}`)}&location=${encodeURIComponent(where)}`;
+      return `<div class="bk-done">
+          <span class="bk-check" aria-hidden="true">✓</span>
+          <h2>You're booked</h2>
+          <p class="bk-when">📅 <b>${longDay(s)}</b> · ${tm(s)}–${tm(e)}</p>
+          <p class="book-fact">📍 ${link}</p>
+          <div class="actions"><a class="btn" href="${gcal}" target="_blank" rel="noopener">Add to Google Calendar</a><button type="button" class="btn ghost" data-ics>Download .ics</button></div>
+          <div class="notice"><b>Save this link</b> to cancel later: <a href="${esc(done.cancelUrl)}">${esc(done.cancelUrl)}</a> <button type="button" class="btn btn-sm ghost" data-copycancel>Copy</button></div>
+        </div>`;
+    };
+    const draw = () => { box.innerHTML = `${info()}<div class="card book-main${picked || done ? ' narrow' : ''}">${done ? confirmation() : picked ? form() : picker()}</div>`; };
+
+    box.addEventListener('click', async e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      const d = b.dataset;
+      if (d.dur) { dur = +d.dur; day = null; month = null; return draw(); }
+      if (d.mon) { month = new Date(month.getFullYear(), month.getMonth() + +d.mon, 1); return draw(); }
+      if (d.day) { day = d.day; return draw(); }
+      if (d.slot) { picked = new Date(+d.slot); draw(); return $('#bk-form [name=name]')?.focus(); }
+      if ('back' in d) { picked = null; return draw(); }
+      if ('ics' in d) {
+        const url = URL.createObjectURL(new Blob([ics(done)], { type: 'text/calendar' }));
+        Object.assign(document.createElement('a'), { href: url, download: 'call-with-rashid.ics' }).click();
+        return setTimeout(() => URL.revokeObjectURL(url), 2000);
+      }
+      if ('copycancel' in d) { await navigator.clipboard.writeText(done.cancelUrl); b.textContent = 'Copied'; }
+    });
+    box.addEventListener('submit', async e => {
+      e.preventDefault();
+      const f = e.target.elements, msg = $('#bk-msg'), btn = e.target.querySelector('[type=submit]');
+      btn.disabled = true; msg.textContent = 'Booking…';
+      const { data, error: err } = await sb.rpc('book_slot', { p_start: picked.toISOString(), p_minutes: dur, p_name: f.name.value, p_email: f.email.value, p_note: f.note.value });
+      btn.disabled = false;
+      if (err) {
+        msg.textContent = rpcErr(err);
+        if (/taken|too soon|outside/i.test(err.message)) { await loadBusy(); setTimeout(() => { picked = null; draw(); }, 2200); }
+        return;
+      }
+      done = { ...data, cancelUrl: new URL(`book.html?cancel=${data.cancel_token}`, location.href).href };
+      draw();
+    });
+    box.innerHTML = '<p class="meta">Loading free times…</p>';
+    await loadBusy();
+    draw();
+
+    async function cancelView(token) {
+      const { data: b, error: err } = await sb.rpc('booking_by_token', { p_token: token });
+      if (err || !b) { box.innerHTML = '<div class="card book-closed"><h1 class="sub-h1">Booking not found</h1><p class="lead">Check the link, or email me.</p></div>'; return; }
+      const s = new Date(b.start_at), past = s < new Date();
+      box.innerHTML = `<div class="card book-closed"><p class="kicker">Your booking</p><h1 class="sub-h1">${esc(b.name)}, ${b.status === 'cancelled' ? 'this call is <em>cancelled</em>' : past ? 'this call has <em>passed</em>' : 'cancel your call?'}</h1>
+        <p class="bk-when">📅 <b>${longDay(s)}</b> · ${tm(s)}–${tm(new Date(b.end_at))} (${b.minutes} min)</p>
+        ${b.status === 'confirmed' && !past ? '<div class="actions"><button type="button" class="btn" id="bk-cancel">Cancel this call</button><a class="btn ghost" href="book.html">Book a different time</a></div><p class="meta" id="bk-msg" aria-live="polite"></p>' : '<a class="btn" href="book.html">Book a new time</a>'}</div>`;
+      $('#bk-cancel')?.addEventListener('click', async () => {
+        const { error: e2 } = await sb.rpc('cancel_booking', { p_token: token });
+        if (e2) { $('#bk-msg').textContent = rpcErr(e2); return; }
+        cancelView(token);
+      });
+    }
+  }
+
   window.App = { sb, esc, md, toast };   // shared with planner.js
-  ({ board, detail, getFile, admin })[page]?.();
+  ({ board, detail, getFile, admin, book })[page]?.();
 })();

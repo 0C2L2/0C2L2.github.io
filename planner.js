@@ -70,6 +70,7 @@
     tasks = t.data; notes = n.data; sessions = f.data; opps = o.data;
     hasRemind = !(await sb.from('tasks').select('remind_min').limit(1)).error;
     hasTime = !(await sb.from('focus_sessions').select('project').limit(1)).error;
+    await loadBookings();
   }
 
   // ───────── what lands on a given day: timed blocks + all-day items (tasks due, deadlines)
@@ -674,8 +675,70 @@
       </div>`;
   }
 
+  // ───────── bookings (public "book a call" page → calls land here and in the calendar)
+  let bookings = [], bset = null, hasBook = false;
+  async function loadBookings() {
+    const [b, s] = await Promise.all([sb.from('bookings').select('*').order('start_at'), sb.from('booking_settings').select('*').eq('id', 1).maybeSingle()]);
+    hasBook = !b.error && !s.error && !!s.data;
+    bookings = b.data || []; bset = s.data;
+  }
+  const WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const bookRow = b => {
+    const s = new Date(b.start_at), live = b.status === 'confirmed' && Date.parse(b.end_at) > Date.now();
+    const subject = encodeURIComponent(`Our call on ${fmt(s, { weekday: 'short', month: 'short', day: 'numeric' })} at ${hm(s)}`);
+    return `<div class="bk-row${b.status === 'cancelled' ? ' cancelled' : ''}">
+      <div class="bk-time"><b>${fmt(s, { weekday: 'short', month: 'short', day: 'numeric' })}</b><span>${hm(s)}–${hm(new Date(b.end_at))} · ${b.minutes} min</span></div>
+      <div class="bk-who"><b>${esc(b.name)}</b><a href="mailto:${esc(b.email)}">${esc(b.email)}</a>${b.note ? `<p>${esc(b.note)}</p>` : ''}</div>
+      <div class="actions">${b.status === 'cancelled' ? '<span class="lock">cancelled</span>' : ''}${live ? `<a class="btn btn-sm ghost" href="mailto:${esc(b.email)}?subject=${subject}">Email</a><button type="button" class="btn btn-sm ghost" data-bkcancel="${b.id}">Cancel</button>` : ''}</div>
+    </div>`;
+  };
+  function vBook() {
+    if (!hasBook) return '<p class="notice">Run <code>supabase/booking.sql</code> in Supabase → SQL Editor once to turn on the booking page, then reload.</p>';
+    const S = bset, link = new URL('book.html', location.href).href, now = Date.now();
+    const up = bookings.filter(b => b.status === 'confirmed' && Date.parse(b.end_at) > now);
+    const past = bookings.filter(b => !up.includes(b)).reverse().slice(0, 30);
+    const hours = S.hours || {};
+    return `
+      <section class="pl-card bk-share">
+        <div><h3>Your booking page</h3><p class="meta">${S.enabled ? 'Open: anyone with the link can book a call.' : 'Closed: switch it on in the settings below.'}</p></div>
+        <code>${esc(link)}</code>
+        <div class="actions"><button type="button" class="btn btn-sm" data-copylink="${esc(link)}">Copy link</button><a class="btn btn-sm ghost" href="book.html" target="_blank" rel="noopener">Open ↗</a></div>
+      </section>
+      <section class="pl-card"><h3>Upcoming calls · ${up.length}</h3>${up.length ? up.map(bookRow).join('') : '<p class="meta">No calls booked yet. Share your link with friends and coworkers.</p>'}</section>
+      <form class="pl-card bk-set" data-bookset>
+        <div class="card-h"><h3>Settings</h3><label class="switch-row"><input type="checkbox" name="enabled"${S.enabled ? ' checked' : ''}> Booking page open</label></div>
+        <div class="bk-set-grid">
+          <label class="full">Title <input name="title" maxlength="80" value="${esc(S.title)}"></label>
+          <label class="full">Intro <textarea name="intro" rows="2" maxlength="400">${esc(S.intro)}</textarea></label>
+          <fieldset class="full"><legend>Call lengths</legend>${[15, 20, 30, 45, 60, 90].map(n => `<label class="check"><input type="checkbox" name="dur" value="${n}"${S.durations.includes(n) ? ' checked' : ''}> ${n} min</label>`).join('')}</fieldset>
+          <fieldset class="full"><legend>Weekly hours (${esc(S.tz)})</legend><div class="bk-hours">${WD.map((w, i) => { const r = (hours[i + 1] || [])[0]; return `<div class="bk-hour"><label class="check"><input type="checkbox" name="on${i + 1}"${r ? ' checked' : ''}> ${w}</label><input type="time" name="from${i + 1}" value="${r ? r[0] : '10:00'}" aria-label="${w} from"><span>–</span><input type="time" name="to${i + 1}" value="${r ? r[1] : '18:00'}" aria-label="${w} until"></div>`; }).join('')}</div></fieldset>
+          <label>Minimum notice (hours) <input name="notice" type="number" min="0" max="336" value="${S.min_notice_min / 60}"></label>
+          <label>Book up to (days ahead) <input name="days" type="number" min="1" max="90" value="${S.max_days}"></label>
+          <label>Buffer between calls (min) <input name="buffer" type="number" min="0" max="120" value="${S.buffer_min}"></label>
+          <label>Time zone <input name="tz" value="${esc(S.tz)}" list="tz-list"><datalist id="tz-list"><option value="Asia/Seoul"><option value="Asia/Tashkent"><option value="Asia/Almaty"><option value="Europe/London"><option value="America/New_York"></datalist></label>
+          <label class="full">Location (shown on the page) <input name="location" maxlength="120" value="${esc(S.location)}"></label>
+          <label class="full">Meeting link (only shown after someone books) <input name="detail" maxlength="300" value="${esc(S.location_detail || '')}" placeholder="https://meet.google.com/…"></label>
+        </div>
+        <div class="actions"><button class="btn" type="submit">Save settings</button><span class="meta">Times already on your calendar are blocked automatically.</span></div>
+      </form>
+      ${past.length ? `<details class="pl-card"><summary class="meta">Past and cancelled · ${past.length}</summary>${past.map(bookRow).join('')}</details>` : ''}`;
+  }
+  async function saveBookSettings(form) {
+    const f = form.elements, hours = {};
+    for (let i = 1; i <= 7; i++) hours[i] = f[`on${i}`].checked && f[`from${i}`].value < f[`to${i}`].value ? [[f[`from${i}`].value, f[`to${i}`].value]] : [];
+    const durations = [...form.querySelectorAll('[name=dur]:checked')].map(x => +x.value);
+    if (!durations.length) return toast('Pick at least one call length');
+    try { new Intl.DateTimeFormat('en', { timeZone: f.tz.value.trim() }); } catch (e) { return toast('Unknown time zone, e.g. Asia/Seoul'); }
+    const row = { enabled: f.enabled.checked, title: f.title.value.trim() || 'Book a call', intro: f.intro.value.trim(), durations, hours, tz: f.tz.value.trim(),
+      min_notice_min: Math.round(Math.max(0, +f.notice.value) * 60), max_days: Math.min(90, Math.max(1, +f.days.value)), buffer_min: Math.min(120, Math.max(0, +f.buffer.value)),
+      location: f.location.value.trim() || 'Online call', location_detail: f.detail.value.trim() || null };
+    const { data, error } = await sb.from('booking_settings').update(row).eq('id', 1).select().single();
+    if (error) return toast(error.message);
+    bset = data; toast(row.enabled ? 'Saved · booking page is open' : 'Saved · booking page is closed'); render();
+  }
+
   // ───────── render + events
-  const VIEWS = { today: vToday, calendar: vCalendar, tasks: vTasks, notes: vNotes, focus: vFocus, stats: vStats };
+  const VIEWS = { today: vToday, calendar: vCalendar, tasks: vTasks, notes: vNotes, focus: vFocus, stats: vStats, book: vBook };
   function render() {
     if (!VIEWS[view]) view = 'today';
     $$('[data-v]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === view));
@@ -850,6 +913,16 @@
       if (d.sheet !== undefined) { sheetAnchor = +d.sheet ? addDays(sheetAnchor, 7 * +d.sheet) : new Date(); return render(); }
       if ('moredays' in d) { logDays += 14; return render(); }
       if ('export' in d) return exportCsv();
+      // bookings
+      if (d.copylink) { await navigator.clipboard.writeText(d.copylink); return toast('Booking link copied'); }
+      if (d.bkcancel) {
+        const b = bookings.find(x => x.id === d.bkcancel);
+        if (!b || !confirm(`Cancel the call with ${b.name}? Let them know by email too.`)) return;
+        const { error } = await sb.from('bookings').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', b.id);
+        if (error) return toast(error.message);
+        if (b.task_id) { await sb.from('tasks').delete().eq('id', b.task_id); tasks = tasks.filter(t => t.id !== b.task_id); }
+        Object.assign(b, { status: 'cancelled' }); toast('Call cancelled'); return render();
+      }
       if (d.timer) return timer[d.timer]();
       if (d.tmodeset) { if (T.running) return; T.mode = d.tmodeset; return timer.reset(); }
       if (d.note) { noteId = d.note; return render(); }
@@ -902,6 +975,7 @@
       }
     });
     r.addEventListener('submit', e => {
+      if (e.target.matches('[data-bookset]')) { e.preventDefault(); return saveBookSettings(e.target); }
       if (!e.target.matches('[data-quick]')) return;
       e.preventDefault();
       const v = e.target.elements.q.value.trim();
@@ -940,7 +1014,7 @@
     addEventListener('keydown', e => {
       if (e.target.closest('input, textarea, select, dialog') || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === 'n') { e.preventDefault(); openTask(); }
-      const k = '123456'.indexOf(e.key);
+      const k = '1234567'.indexOf(e.key);
       if (k >= 0 && e.key) go(Object.keys(VIEWS)[k]);
     });
     setInterval(tick, 500);

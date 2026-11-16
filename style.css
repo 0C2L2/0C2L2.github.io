@@ -1094,3 +1094,73 @@ html.privacy body::after {
   .mc .ev span { display: none; }
   .tg-day { font-size: 13px; }
 }
+
+
+/* ── book a call (public page) ── */
+.book { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 16px; align-items: start; max-width: 1040px; margin: 0 auto; }
+.book .card { padding: 26px; }
+.book-info { display: grid; gap: 12px; align-content: start; }
+.book-info h1 { font: 600 clamp(26px, 3vw, 34px)/1.1 var(--sans); letter-spacing: -.03em; margin: 0; }
+.book-info .kicker { margin: 4px 0 0; }
+.book-info .lead { font-size: 15.5px; margin: 0; }
+.book-info .chips { margin: 6px 0 0; }
+.book-avatar { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font: 600 22px var(--sans); color: var(--on-accent); background: var(--accent); }
+.book-fact { margin: 0; font-size: 14px; color: var(--text); }
+.book-main { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 24px; min-height: 380px; }
+.book-main.narrow { grid-template-columns: 1fr; }
+.bk-month { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.bk-month b { font-size: 16px; }
+.bk-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.bk-wd { font: 500 11px var(--mono); color: var(--muted); text-align: center; padding-bottom: 4px; }
+.bk-day { aspect-ratio: 1; border-radius: 50%; border: 0; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--fg); font: 600 14px var(--sans); cursor: pointer; }
+.bk-day:hover { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+.bk-day.on { background: var(--accent); color: var(--on-accent); }
+.bk-day:disabled { background: none; color: var(--muted); opacity: .5; font-weight: 400; cursor: default; }
+.bk-times { display: grid; align-content: start; gap: 10px; }
+.bk-times-h { margin: 0; font-weight: 600; }
+.bk-slots { display: grid; gap: 8px; max-height: 380px; overflow-y: auto; padding-right: 4px; }
+.bk-slot { padding: 11px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); background: transparent; color: var(--accent); font: 600 14.5px var(--mono); cursor: pointer; }
+.bk-slot:hover, .bk-slot:focus-visible { background: var(--accent); color: var(--on-accent); }
+.bk-form { max-width: 520px; }
+.bk-back { border: 0; background: none; padding: 0; cursor: pointer; text-align: left; width: fit-content; }
+.bk-when { margin: 0; font-size: 15.5px; }
+.page .bk-form textarea { font: 15px/1.5 var(--sans); resize: vertical; }
+.bk-done { display: grid; gap: 12px; justify-items: start; }
+.bk-done h2 { font: 600 28px var(--sans); letter-spacing: -.02em; margin: 0; }
+.bk-check { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; font-size: 24px; color: var(--on-accent); background: var(--green); }
+.bk-done .notice { font-size: 13.5px; word-break: break-all; }
+.book-closed { grid-column: 1 / -1; padding: 40px; text-align: center; }
+.book-closed .actions { justify-content: center; }
+.socials .book-cta { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+/* planner: bookings tab */
+.bk-share { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 16px; }
+.bk-share h3 { margin: 0 0 2px; }
+.bk-share .meta { margin: 0; }
+.bk-share code { font: 13px var(--mono); padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.bk-row { display: grid; grid-template-columns: 170px minmax(0, 1fr) auto; gap: 16px; align-items: start; padding: 12px 4px; border-top: 1px solid var(--line); }
+.bk-row.cancelled { opacity: .55; }
+.bk-time, .bk-who { display: grid; gap: 2px; min-width: 0; }
+.bk-time span { font: 12.5px var(--mono); color: var(--muted); }
+.bk-who a { font-size: 13.5px; color: var(--accent); }
+.bk-who p { margin: 6px 0 0; font-size: 14px; color: var(--text); white-space: pre-wrap; }
+.bk-set { display: grid; gap: 14px; }
+.bk-set-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.bk-set-grid > label { display: grid; gap: 5px; font-size: 13px; color: var(--muted); }
+.bk-set-grid .full { grid-column: 1 / -1; }
+.bk-set fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.bk-set legend { font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 0 6px; }
+.bk-set .check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--fg); }
+.page .bk-set .check input { width: auto; }
+.bk-hours { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px 18px; width: 100%; }
+.bk-hour { display: grid; grid-template-columns: 70px 1fr auto 1fr; align-items: center; gap: 8px; }
+.page .bk-hour input[type=time] { padding: 7px 8px; font-size: 14px; }
+.switch-row { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--fg); }
+.page .switch-row input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+@media (max-width: 860px) {
+  .book, .book-main { grid-template-columns: 1fr; }
+  .bk-share { grid-template-columns: 1fr; }
+  .bk-row { grid-template-columns: 1fr; gap: 6px; }
+  .bk-set-grid { grid-template-columns: 1fr 1fr; }
+}
