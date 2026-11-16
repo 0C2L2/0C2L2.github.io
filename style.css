@@ -1164,3 +1164,19 @@ html.privacy body::after {
   .bk-row { grid-template-columns: 1fr; gap: 6px; }
   .bk-set-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* book: how to meet */
+.bk-meet { border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.bk-meet legend { font-size: 13px; color: var(--muted); margin-bottom: 8px; padding: 0; }
+.bk-opt { position: relative; cursor: pointer; }
+.bk-opt input { position: absolute; opacity: 0; }
+.bk-opt span { display: flex; align-items: center; gap: 8px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; font-size: 14.5px; color: var(--fg); background: var(--bg2); }
+.bk-opt i { font-style: normal; }
+.bk-opt input:checked + span { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--bg2)); box-shadow: inset 0 0 0 1px var(--accent); }
+.bk-opt input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bk-meet-hint { margin: -4px 0 0; }
+/* planner: links still to send */
+.bk-row.todo { box-shadow: inset 3px 0 0 var(--accent); padding-left: 12px; }
+.bk-who .t-meta { margin-top: 4px; }
+.bk-who .t-meta a { color: var(--muted); font-size: 12px; }
+.sent { color: var(--green); }

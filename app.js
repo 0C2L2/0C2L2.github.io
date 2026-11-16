@@ -657,6 +657,9 @@
     const zoned = (y, m, d, h, mi) => { const g = Date.UTC(y, m, d, h, mi); return new Date(g - offset(g - offset(g))); };
     const today = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: S.tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).map(x => [x.type, x.value]));
     let dur = S.durations.includes(30) ? 30 : S.durations[0], busy = [], day = null, month = null, picked = null, done = null;
+    const MEET = { google_meet: ['Google Meet', '📹'], zoom: ['Zoom', '💻'], teams: ['Microsoft Teams', '🟦'], kakaotalk: ['KakaoTalk', '💬'], phone: ['Phone call', '📞'], in_person: ['In person', '🤝'] };
+    const options = (S.meet_options && S.meet_options.length ? S.meet_options : ['google_meet']).filter(k => MEET[k]);
+    let meet = options[0];
     const loadBusy = async () => {
       const { data } = await sb.rpc('busy_slots', { p_from: new Date().toISOString(), p_to: new Date(Date.now() + (S.max_days + 1) * 864e5).toISOString() });
       busy = (data || []).map(b => [Date.parse(b.start_at), Date.parse(b.end_at)]);
@@ -684,7 +687,7 @@
         <h1>${esc(S.title)}</h1>
         <p class="lead">${esc(S.intro)}</p>
         <div class="chips" role="group" aria-label="Call length">${S.durations.map(n => `<button type="button" data-dur="${n}" aria-pressed="${n === dur}"${picked || done ? ' disabled' : ''}>${n} min</button>`).join('')}</div>
-        <p class="book-fact"><span aria-hidden="true">📍</span> ${esc(S.location)}</p>
+        <p class="book-fact"><span aria-hidden="true">📹</span> ${options.map(k => MEET[k][0]).join(' · ')}</p>
         <p class="book-fact"><span aria-hidden="true">🌐</span> Times are in your time zone (${esc(myTz)})</p>
       </aside>`;
     const picker = () => {
@@ -707,26 +710,40 @@
     const form = () => `<form class="bk-form stack-form" id="bk-form">
         <button type="button" class="back bk-back" data-back>← Pick another time</button>
         <p class="bk-when">📅 <b>${longDay(picked)}</b> · ${tm(picked)}–${tm(new Date(+picked + dur * 6e4))} <span class="meta">(${dur} min)</span></p>
+        <fieldset class="bk-meet"><legend>How should we meet?</legend>
+          ${options.map(k => `<label class="bk-opt"><input type="radio" name="meet" value="${k}"${k === meet ? ' checked' : ''}><span><i aria-hidden="true">${MEET[k][1]}</i>${MEET[k][0]}</span></label>`).join('')}
+        </fieldset>
+        <p class="meta bk-meet-hint" id="bk-hint">${meetHint(meet)}</p>
         <label>Your name <input name="name" required minlength="2" maxlength="80" autocomplete="name"></label>
         <label>Email <input name="email" type="email" required maxlength="120" autocomplete="email"></label>
+        <label id="bk-phone"${meet === 'phone' ? '' : ' hidden'}>Phone number <input name="phone" type="tel" maxlength="25" autocomplete="tel" placeholder="+82 10 1234 5678"${meet === 'phone' ? ' required' : ''}></label>
         <label>What would you like to talk about? <span class="meta">(optional)</span><textarea name="note" rows="4" maxlength="1000"></textarea></label>
         <button class="btn btn-wide" type="submit">Confirm booking</button>
         <p class="meta" id="bk-msg" aria-live="polite"></p>
       </form>`;
+    function meetHint(k) {
+      if (k === 'phone') return 'I’ll call you at the number you enter below.';
+      if (k === 'in_person') return S.in_person_place ? `We’ll meet at: ${esc(S.in_person_place)}` : 'I’ll email you the place to meet.';
+      return `I’ll email you the ${MEET[k][0]} link before the call.`;
+    }
+    const where = b => b.meet === 'phone' ? `Phone call (${b.phone})` : b.meet === 'in_person' ? `In person${b.place ? `: ${b.place}` : ''}` : `${b.meet_label} (link by email)`;
     const ics = b => {
       const z = d => new Date(d).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''), t = s => String(s || '').replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n');
       return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//0c2l2.github.io//book//EN', 'BEGIN:VEVENT', `UID:${b.id}@0c2l2.github.io`, `DTSTAMP:${z(Date.now())}`, `DTSTART:${z(b.start_at)}`, `DTEND:${z(b.end_at)}`,
-        'SUMMARY:Call with Rashid Tagaev', `DESCRIPTION:${t([b.location_detail || b.location, `Cancel: ${b.cancelUrl}`].join('\n'))}`, `LOCATION:${t(b.location_detail || b.location)}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+        'SUMMARY:Call with Rashid Tagaev', `DESCRIPTION:${t([where(b), `Cancel: ${b.cancelUrl}`].join('\n'))}`, `LOCATION:${t(where(b))}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
     };
     const confirmation = () => {
       const s = new Date(done.start_at), e = new Date(done.end_at), z = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-      const where = done.location_detail || done.location, link = /^https?:\/\//.test(where || '') ? `<a href="${esc(where)}" target="_blank" rel="noopener">${esc(where)}</a>` : esc(where);
-      const gcal = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent('Call with Rashid Tagaev')}&dates=${z(s)}/${z(e)}&details=${encodeURIComponent(`${where}\n\nCancel: ${done.cancelUrl}`)}&location=${encodeURIComponent(where)}`;
+      const w = where(done), icon = (MEET[done.meet] || MEET.google_meet)[1];
+      const next = done.meet === 'phone' ? `I’ll call you at <b>${esc(done.phone)}</b>.`
+        : done.meet === 'in_person' ? (done.place ? `We’ll meet at <b>${esc(done.place)}</b>.` : `I’ll email the meeting place to <b>${esc(done.email)}</b>.`)
+        : `I’ll email the <b>${esc(done.meet_label)}</b> link to <b>${esc(done.email)}</b> before the call.`;
+      const gcal = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent('Call with Rashid Tagaev')}&dates=${z(s)}/${z(e)}&details=${encodeURIComponent(`${w}\n\nCancel: ${done.cancelUrl}`)}&location=${encodeURIComponent(w)}`;
       return `<div class="bk-done">
           <span class="bk-check" aria-hidden="true">✓</span>
           <h2>You're booked</h2>
           <p class="bk-when">📅 <b>${longDay(s)}</b> · ${tm(s)}–${tm(e)}</p>
-          <p class="book-fact">📍 ${link}</p>
+          <p class="book-fact">${icon} ${esc(done.meet_label)} · ${next}</p>
           <div class="actions"><a class="btn" href="${gcal}" target="_blank" rel="noopener">Add to Google Calendar</a><button type="button" class="btn ghost" data-ics>Download .ics</button></div>
           <div class="notice"><b>Save this link</b> to cancel later: <a href="${esc(done.cancelUrl)}">${esc(done.cancelUrl)}</a> <button type="button" class="btn btn-sm ghost" data-copycancel>Copy</button></div>
         </div>`;
@@ -749,11 +766,17 @@
       }
       if ('copycancel' in d) { await navigator.clipboard.writeText(done.cancelUrl); b.textContent = 'Copied'; }
     });
+    box.addEventListener('change', e => {   // meeting option → hint, and ask for a phone number only for phone calls
+      if (e.target.name !== 'meet') return;
+      meet = e.target.value;
+      $('#bk-hint').innerHTML = meetHint(meet);
+      const ph = $('#bk-phone'); ph.hidden = meet !== 'phone'; ph.querySelector('input').required = meet === 'phone';
+    });
     box.addEventListener('submit', async e => {
       e.preventDefault();
       const f = e.target.elements, msg = $('#bk-msg'), btn = e.target.querySelector('[type=submit]');
       btn.disabled = true; msg.textContent = 'Booking…';
-      const { data, error: err } = await sb.rpc('book_slot', { p_start: picked.toISOString(), p_minutes: dur, p_name: f.name.value, p_email: f.email.value, p_note: f.note.value });
+      const { data, error: err } = await sb.rpc('book_slot', { p_start: picked.toISOString(), p_minutes: dur, p_name: f.name.value, p_email: f.email.value, p_note: f.note.value, p_meet: meet, p_phone: meet === 'phone' ? f.phone.value : null });
       btn.disabled = false;
       if (err) {
         msg.textContent = rpcErr(err);
@@ -772,7 +795,7 @@
       if (err || !b) { box.innerHTML = '<div class="card book-closed"><h1 class="sub-h1">Booking not found</h1><p class="lead">Check the link, or email me.</p></div>'; return; }
       const s = new Date(b.start_at), past = s < new Date();
       box.innerHTML = `<div class="card book-closed"><p class="kicker">Your booking</p><h1 class="sub-h1">${esc(b.name)}, ${b.status === 'cancelled' ? 'this call is <em>cancelled</em>' : past ? 'this call has <em>passed</em>' : 'cancel your call?'}</h1>
-        <p class="bk-when">📅 <b>${longDay(s)}</b> · ${tm(s)}–${tm(new Date(b.end_at))} (${b.minutes} min)</p>
+        <p class="bk-when">📅 <b>${longDay(s)}</b> · ${tm(s)}–${tm(new Date(b.end_at))} (${b.minutes} min${b.meet_label ? ` · ${esc(b.meet_label)}` : ''})</p>
         ${b.status === 'confirmed' && !past ? '<div class="actions"><button type="button" class="btn" id="bk-cancel">Cancel this call</button><a class="btn ghost" href="book.html">Book a different time</a></div><p class="meta" id="bk-msg" aria-live="polite"></p>' : '<a class="btn" href="book.html">Book a new time</a>'}</div>`;
       $('#bk-cancel')?.addEventListener('click', async () => {
         const { error: e2 } = await sb.rpc('cancel_booking', { p_token: token });

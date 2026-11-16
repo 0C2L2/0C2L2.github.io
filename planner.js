@@ -683,13 +683,25 @@
     bookings = b.data || []; bset = s.data;
   }
   const WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const MEET = { google_meet: 'Google Meet', zoom: 'Zoom', teams: 'Microsoft Teams', kakaotalk: 'KakaoTalk', phone: 'Phone call', in_person: 'In person' };
+  const needsLink = b => !['phone', 'in_person'].includes(b.meet || 'google_meet');
+  // a ready-to-send email: the meeting details are filled in, you only paste the link
+  const mailFor = b => {
+    const s = new Date(b.start_at), when = `${fmt(s, { weekday: 'long', month: 'long', day: 'numeric' })}, ${hm(s)}–${hm(new Date(b.end_at))} (${Intl.DateTimeFormat().resolvedOptions().timeZone} time)`;   // printed in this device's zone, so label it that way
+    const kind = MEET[b.meet] || 'Online call', first = b.name.split(' ')[0];
+    const body = [`Hi ${first},`, '', `Thanks for booking a call. Here are the details:`, '', `When: ${when}`, `Where: ${kind}`,
+      needsLink(b) ? 'Link: ' : b.meet === 'phone' ? `I'll call you at ${b.phone}.` : `Place: ${bset?.in_person_place || ''}`,
+      '', 'See you then,', 'Rashid'].join('\n');
+    return `mailto:${encodeURIComponent(b.email)}?subject=${encodeURIComponent(`${kind}: our call on ${fmt(s, { weekday: 'short', month: 'short', day: 'numeric' })} at ${hm(s)}`)}&body=${encodeURIComponent(body)}`;
+  };
   const bookRow = b => {
-    const s = new Date(b.start_at), live = b.status === 'confirmed' && Date.parse(b.end_at) > Date.now();
-    const subject = encodeURIComponent(`Our call on ${fmt(s, { weekday: 'short', month: 'short', day: 'numeric' })} at ${hm(s)}`);
-    return `<div class="bk-row${b.status === 'cancelled' ? ' cancelled' : ''}">
+    const s = new Date(b.start_at), live = b.status === 'confirmed' && Date.parse(b.end_at) > Date.now(), link = needsLink(b);
+    return `<div class="bk-row${b.status === 'cancelled' ? ' cancelled' : ''}${live && link && !b.link_sent ? ' todo' : ''}">
       <div class="bk-time"><b>${fmt(s, { weekday: 'short', month: 'short', day: 'numeric' })}</b><span>${hm(s)}–${hm(new Date(b.end_at))} · ${b.minutes} min</span></div>
-      <div class="bk-who"><b>${esc(b.name)}</b><a href="mailto:${esc(b.email)}">${esc(b.email)}</a>${b.note ? `<p>${esc(b.note)}</p>` : ''}</div>
-      <div class="actions">${b.status === 'cancelled' ? '<span class="lock">cancelled</span>' : ''}${live ? `<a class="btn btn-sm ghost" href="mailto:${esc(b.email)}?subject=${subject}">Email</a><button type="button" class="btn btn-sm ghost" data-bkcancel="${b.id}">Cancel</button>` : ''}</div>
+      <div class="bk-who"><b>${esc(b.name)}</b><a href="mailto:${esc(b.email)}">${esc(b.email)}</a>
+        <span class="t-meta"><span class="proj">${esc(MEET[b.meet] || 'Google Meet')}</span>${b.phone ? `<a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>` : ''}${live && link ? (b.link_sent ? '<span class="sent">✓ link sent</span>' : '<span class="flag">link not sent yet</span>') : ''}</span>
+        ${b.note ? `<p>${esc(b.note)}</p>` : ''}</div>
+      <div class="actions">${b.status === 'cancelled' ? '<span class="lock">cancelled</span>' : ''}${live ? `<a class="btn btn-sm${link && !b.link_sent ? '' : ' ghost'}" href="${esc(mailFor(b))}">${link ? 'Email link' : 'Email'}</a>${link ? `<button type="button" class="btn btn-sm ghost" data-bklink="${b.id}">${b.link_sent ? 'Mark not sent' : 'Mark link sent'}</button>` : ''}<button type="button" class="btn btn-sm ghost" data-bkcancel="${b.id}">Cancel</button>` : ''}</div>
     </div>`;
   };
   function vBook() {
@@ -716,8 +728,8 @@
           <label>Book up to (days ahead) <input name="days" type="number" min="1" max="90" value="${S.max_days}"></label>
           <label>Buffer between calls (min) <input name="buffer" type="number" min="0" max="120" value="${S.buffer_min}"></label>
           <label>Time zone <input name="tz" value="${esc(S.tz)}" list="tz-list"><datalist id="tz-list"><option value="Asia/Seoul"><option value="Asia/Tashkent"><option value="Asia/Almaty"><option value="Europe/London"><option value="America/New_York"></datalist></label>
-          <label class="full">Location (shown on the page) <input name="location" maxlength="120" value="${esc(S.location)}"></label>
-          <label class="full">Meeting link (only shown after someone books) <input name="detail" maxlength="300" value="${esc(S.location_detail || '')}" placeholder="https://meet.google.com/…"></label>
+          <fieldset class="full"><legend>Ways to meet (people pick one; you email the link)</legend>${Object.entries(MEET).map(([k, l]) => `<label class="check"><input type="checkbox" name="meet" value="${k}"${(S.meet_options || ['google_meet', 'zoom']).includes(k) ? ' checked' : ''}> ${l}</label>`).join('')}</fieldset>
+          <label class="full">In-person place (shown when someone picks “In person”) <input name="place" maxlength="160" value="${esc(S.in_person_place || '')}" placeholder="e.g. Inha University, Hi-Tech Center lobby"></label>
         </div>
         <div class="actions"><button class="btn" type="submit">Save settings</button><span class="meta">Times already on your calendar are blocked automatically.</span></div>
       </form>
@@ -728,10 +740,12 @@
     for (let i = 1; i <= 7; i++) hours[i] = f[`on${i}`].checked && f[`from${i}`].value < f[`to${i}`].value ? [[f[`from${i}`].value, f[`to${i}`].value]] : [];
     const durations = [...form.querySelectorAll('[name=dur]:checked')].map(x => +x.value);
     if (!durations.length) return toast('Pick at least one call length');
+    const meet_options = [...form.querySelectorAll('[name=meet]:checked')].map(x => x.value);
+    if (!meet_options.length) return toast('Pick at least one way to meet');
     try { new Intl.DateTimeFormat('en', { timeZone: f.tz.value.trim() }); } catch (e) { return toast('Unknown time zone, e.g. Asia/Seoul'); }
     const row = { enabled: f.enabled.checked, title: f.title.value.trim() || 'Book a call', intro: f.intro.value.trim(), durations, hours, tz: f.tz.value.trim(),
       min_notice_min: Math.round(Math.max(0, +f.notice.value) * 60), max_days: Math.min(90, Math.max(1, +f.days.value)), buffer_min: Math.min(120, Math.max(0, +f.buffer.value)),
-      location: f.location.value.trim() || 'Online call', location_detail: f.detail.value.trim() || null };
+      meet_options, in_person_place: f.place.value.trim() || null };
     const { data, error } = await sb.from('booking_settings').update(row).eq('id', 1).select().single();
     if (error) return toast(error.message);
     bset = data; toast(row.enabled ? 'Saved · booking page is open' : 'Saved · booking page is closed'); render();
@@ -915,6 +929,12 @@
       if ('export' in d) return exportCsv();
       // bookings
       if (d.copylink) { await navigator.clipboard.writeText(d.copylink); return toast('Booking link copied'); }
+      if (d.bklink) {
+        const b = bookings.find(x => x.id === d.bklink), link_sent = !b.link_sent;
+        const { error } = await sb.from('bookings').update({ link_sent }).eq('id', b.id);
+        if (error) return toast(error.message);
+        b.link_sent = link_sent; toast(link_sent ? `Marked: link sent to ${b.name}` : 'Marked as not sent'); return render();
+      }
       if (d.bkcancel) {
         const b = bookings.find(x => x.id === d.bkcancel);
         if (!b || !confirm(`Cancel the call with ${b.name}? Let them know by email too.`)) return;

@@ -21,6 +21,8 @@ create table if not exists public.booking_settings (
   location_detail text,                                                              -- private: only shown to someone who booked
   updated_at      timestamptz not null default now()
 );
+alter table public.booking_settings add column if not exists meet_options text[] not null default '{google_meet,zoom}';
+alter table public.booking_settings add column if not exists in_person_place text;
 insert into public.booking_settings (id) values (1) on conflict (id) do nothing;
 drop trigger if exists booking_settings_touch on public.booking_settings;
 create trigger booking_settings_touch before update on public.booking_settings for each row execute function public.touch_updated_at();
@@ -45,17 +47,27 @@ create table if not exists public.bookings (
   created_at      timestamptz not null default now(),
   cancelled_at    timestamptz
 );
+alter table public.bookings add column if not exists meet text not null default 'google_meet';
+alter table public.bookings add column if not exists phone text;
+alter table public.bookings add column if not exists link_sent boolean not null default false;
 create index if not exists bookings_start on public.bookings (start_at);
 create unique index if not exists bookings_token on public.bookings (cancel_token);
 alter table public.bookings enable row level security;
 drop policy if exists "admin only" on public.bookings;
 create policy "admin only" on public.bookings for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
+-- how a call happens: Google Meet, Zoom, Teams, KakaoTalk, phone or in person (the owner emails links by hand)
+create or replace function public.meet_label(p text) returns text language sql immutable as $$
+  select case p when 'google_meet' then 'Google Meet' when 'zoom' then 'Zoom' when 'teams' then 'Microsoft Teams'
+                when 'kakaotalk' then 'KakaoTalk' when 'phone' then 'Phone call' when 'in_person' then 'In person' else p end;
+$$;
+
 -- public page settings (never the private meeting link)
 create or replace function public.get_booking_page() returns json
 language sql stable security definer set search_path = public as $$
   select json_build_object('enabled', enabled, 'title', title, 'intro', intro, 'durations', durations, 'hours', hours, 'tz', tz,
-    'min_notice_min', min_notice_min, 'max_days', max_days, 'buffer_min', buffer_min, 'location', location)
+    'min_notice_min', min_notice_min, 'max_days', max_days, 'buffer_min', buffer_min, 'location', location,
+    'meet_options', meet_options, 'in_person_place', in_person_place)
   from booking_settings where id = 1;
 $$;
 
@@ -83,7 +95,9 @@ language sql stable security definer set search_path = public as $$
           else false end;
 $$;
 
-create or replace function public.book_slot(p_start timestamptz, p_minutes integer, p_name text, p_email text, p_note text default '')
+drop function if exists public.book_slot(timestamptz, integer, text, text, text);
+create or replace function public.book_slot(p_start timestamptz, p_minutes integer, p_name text, p_email text, p_note text default '',
+                                            p_meet text default null, p_phone text default null)
 returns json language plpgsql security definer set search_path = public as $$
 declare
   s booking_settings; v_end timestamptz; lt timestamp; ok boolean; ip text; tid uuid; b bookings; buf interval;
@@ -94,6 +108,11 @@ begin
   p_name := btrim(coalesce(p_name, '')); p_email := lower(btrim(coalesce(p_email, ''))); p_note := left(btrim(coalesce(p_note, '')), 1000);
   if length(p_name) < 2 or length(p_name) > 80 then raise exception 'Please enter your name.'; end if;
   if length(p_email) > 120 or p_email !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then raise exception 'Please enter a valid email address.'; end if;
+  p_meet := coalesce(nullif(p_meet, ''), s.meet_options[1]);
+  if not (p_meet = any (s.meet_options)) then raise exception 'Please pick one of the offered ways to meet.'; end if;
+  p_phone := nullif(btrim(coalesce(p_phone, '')), '');
+  if p_meet = 'phone' and (p_phone is null or p_phone !~ '^\+?[0-9 ()-]{6,25}$') then raise exception 'Please enter a phone number I can call.'; end if;
+  if p_meet <> 'phone' then p_phone := null; end if;
   if extract(epoch from p_start)::bigint % 300 <> 0 then raise exception 'That is not a valid start time.'; end if;
   v_end := p_start + make_interval(mins => p_minutes);
   if p_start < now() + make_interval(mins => s.min_notice_min) then raise exception 'That time is too soon to book.'; end if;
@@ -115,21 +134,25 @@ begin
     raise exception 'Sorry, that time was just taken. Please pick another one.';
   end if;
   insert into tasks (kind, title, notes, start_at, end_at, tags, remind_min, remind_at)
-  values ('event', 'Call with ' || p_name,
-          'Booked by ' || p_name || ' <' || p_email || '>' || case when p_note <> '' then E'\n\n' || p_note else '' end,
+  values ('event',
+          case p_meet when 'in_person' then 'Meeting with ' when 'phone' then 'Phone call with ' else meet_label(p_meet) || ' call with ' end || p_name,
+          'Booked by ' || p_name || ' <' || p_email || '>' || E'\nMeeting: ' || meet_label(p_meet)
+            || case when p_phone is not null then ' · ' || p_phone when p_meet not in ('in_person', 'phone') then ' (email them the link)' else '' end
+            || case when p_note <> '' then E'\n\n' || p_note else '' end,
           p_start, v_end, '{booking}', 10, p_start - interval '10 minutes')
   returning id into tid;
-  insert into bookings (task_id, start_at, end_at, minutes, name, email, note, ip_hash)
-  values (tid, p_start, v_end, p_minutes, p_name, p_email, nullif(p_note, ''), md5(ip))
+  insert into bookings (task_id, start_at, end_at, minutes, name, email, note, ip_hash, meet, phone)
+  values (tid, p_start, v_end, p_minutes, p_name, p_email, nullif(p_note, ''), md5(ip), p_meet, p_phone)
   returning * into b;
   return json_build_object('id', b.id, 'cancel_token', b.cancel_token, 'start_at', b.start_at, 'end_at', b.end_at,
-                           'minutes', b.minutes, 'location', s.location, 'location_detail', s.location_detail);
+                           'minutes', b.minutes, 'meet', b.meet, 'meet_label', meet_label(b.meet), 'phone', b.phone, 'email', b.email,
+                           'place', case when b.meet = 'in_person' then s.in_person_place end);
 end $$;
 
 -- the booker's own link: look up and cancel with the secret token
 create or replace function public.booking_by_token(p_token uuid) returns json
 language sql stable security definer set search_path = public as $$
-  select json_build_object('name', name, 'start_at', start_at, 'end_at', end_at, 'minutes', minutes, 'status', status)
+  select json_build_object('name', name, 'start_at', start_at, 'end_at', end_at, 'minutes', minutes, 'status', status, 'meet_label', meet_label(meet))
   from bookings where cancel_token = p_token;
 $$;
 
@@ -147,6 +170,6 @@ end $$;
 
 grant execute on function public.get_booking_page() to anon, authenticated;
 grant execute on function public.busy_slots(timestamptz, timestamptz) to anon, authenticated;
-grant execute on function public.book_slot(timestamptz, integer, text, text, text) to anon, authenticated;
+grant execute on function public.book_slot(timestamptz, integer, text, text, text, text, text) to anon, authenticated;
 grant execute on function public.booking_by_token(uuid) to anon, authenticated;
 grant execute on function public.cancel_booking(uuid) to anon, authenticated;

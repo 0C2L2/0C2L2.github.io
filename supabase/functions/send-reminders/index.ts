@@ -117,12 +117,13 @@ Deno.serve(async req => {
     }
     // new and cancelled bookings from the public "book a call" page → tell the owner's devices
     let bk = [];
-    try { bk = await db('bookings?select=id,name,start_at,minutes,status&or=(and(status.eq.confirmed,notified.eq.false),and(status.eq.cancelled,cancel_notified.eq.false))'); }
+    try { bk = await db('bookings?select=id,name,start_at,minutes,status,meet&or=(and(status.eq.confirmed,notified.eq.false),and(status.eq.cancelled,cancel_notified.eq.false))'); }
     catch (e) { bk = []; }   // booking.sql not run yet
     for (const b of bk) {
       const when = new Date(b.start_at).toLocaleString('en-GB', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
       const cancelled = b.status === 'cancelled';
-      if (subs.length) sent += await sendAll(subs, { title: `${cancelled ? 'Call cancelled' : 'New call booked'}: ${b.name}`, body: `${when} · ${b.minutes} min`, url: 'planner.html', tag: `bk-${b.id}` });
+      const how = { google_meet: 'Google Meet', zoom: 'Zoom', teams: 'Microsoft Teams', kakaotalk: 'KakaoTalk', phone: 'Phone call', in_person: 'In person' }[b.meet];
+      if (subs.length) sent += await sendAll(subs, { title: `${cancelled ? 'Call cancelled' : 'New call booked'}: ${b.name}`, body: `${when} · ${b.minutes} min${how ? ` · ${how}` : ''}`, url: 'planner.html', tag: `bk-${b.id}` });
       await db(`bookings?id=eq.${b.id}`, 'PATCH', cancelled ? { notified: true, cancel_notified: true } : { notified: true });
     }
     return json({ due: due.length, sent, bookings: bk.length });
