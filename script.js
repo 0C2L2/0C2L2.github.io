@@ -676,7 +676,7 @@ function placePicks() {
   const vw = root.clientWidth, vh = innerHeight, L = 250;
   S = Math.max(.8, Math.min(1.7, vh * .42 / L));                       // arm size follows the viewport
   arm.setAttribute('width', vw); arm.setAttribute('height', vh);
-  let active = null;
+  const shown = [];
   for (const p of picks) {
     const { el, slot } = p, b = docBox(el), top = b.y - scrollY, left = b.x - scrollX;
     const k = Math.min(1, Math.max(0, (vh * .98 - top) / (vh * .85)));  // 0 = just below the fold, 1 = placed
@@ -695,9 +695,11 @@ function placePicks() {
       slot.style.transform = `translate(${left}px, ${top}px)`;
       slot.style.width = b.w + 'px'; slot.style.height = b.h + 'px';
       slot.style.opacity = off;
-      if (!active) active = { p, k, side, left, top, b, dx, dy, g };
+      shown.push({ p, k, side, left, top, b, dx, dy, g });
     }
   }
+  // one arm, several cards in motion: serve the card that's being carried (k .12–.7) over one it's already letting go of
+  const active = shown.find(c => c.k >= .12 && c.k < .7) || shown[0];
   if (!active) { arm.style.display = armTag.style.display = 'none'; return; }
   const { p, k, side, left, top, b, dx, dy, g } = active;
   const open = Math.min(1, Math.max(0, (k - .55) / .15)), back = ease(Math.max(0, (k - .7) / .3));
