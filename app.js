@@ -167,7 +167,7 @@
   async function admin() {
     const login = $('#login'), dash = $('#dash');
     let ops = [], files = [], prof = [], opFilter = 'all';
-    const loadFiles = fileManager({ rows: $('#file-rows'), drop: $('#drop'), pick: $('#pick'), msg: $('#up-msg'),
+    const loadFiles = fileManager({ rows: $('#file-rows'), drop: $('#drop'), pick: $('#pick'), msg: $('#up-msg'), browse: true,
       after: fs => { files = fs; stats(); } });
 
     // Render from the session the auth callback hands us. Never await other sb.auth calls inside
@@ -378,71 +378,320 @@
     });
   }
 
-  // ── file list + uploads: the admin Files tab (all files) and each opportunity's kit (only its files)
+  // ── zip reader: central directory + DecompressionStream('deflate-raw'); no library. Stored / deflated entries, UTF-8 or
+  //    legacy (Korean Windows = CP949) names. ponytail: no ZIP64 / encryption; a 50 MB upload cap makes ZIP64 moot.
+  // zip-start
+  async function readZip(buf) {
+    const v = new DataView(buf), u8 = new Uint8Array(buf);
+    let e = buf.byteLength - 22;
+    while (e >= 0 && v.getUint32(e, true) !== 0x06054b50) e--;   // end-of-central-directory record (a comment may follow it)
+    if (e < 0) throw new Error('This is not a valid zip file.');
+    const count = v.getUint16(e + 10, true);
+    let p = v.getUint32(e + 16, true);
+    if (p === 0xffffffff || count === 0xffff) throw new Error('ZIP64 archives are not supported.');
+    const name = (bytes, utf8) => {
+      if (!utf8) { try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch (err) { return new TextDecoder('euc-kr').decode(bytes); } }
+      return new TextDecoder().decode(bytes);
+    };
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      if (v.getUint32(p, true) !== 0x02014b50) throw new Error('The zip file is damaged.');
+      const flags = v.getUint16(p + 8, true), method = v.getUint16(p + 10, true), csize = v.getUint32(p + 20, true), usize = v.getUint32(p + 24, true);
+      const nlen = v.getUint16(p + 28, true), xlen = v.getUint16(p + 30, true), clen = v.getUint16(p + 32, true), lho = v.getUint32(p + 42, true);
+      const n = name(u8.subarray(p + 46, p + 46 + nlen), flags & 0x800);
+      p += 46 + nlen + xlen + clen;
+      const at = lho + 30 + v.getUint16(lho + 26, true) + v.getUint16(lho + 28, true);
+      out.push({
+        name: n, dir: n.endsWith('/'), size: usize, encrypted: !!(flags & 1),
+        async read() {
+          const c = u8.subarray(at, at + csize);
+          if (flags & 1) throw new Error(`${n} is password-protected.`);
+          if (method === 0) return c.slice();
+          if (method !== 8) throw new Error(`${n}: unsupported compression (method ${method}).`);
+          return new Uint8Array(await new Response(new Blob([c]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+        },
+      });
+    }
+    return out;
+  }
+  // zip-end
+
+  // ── file list + uploads. browse: true = the admin Files tab as a file manager (folders, move, copy, unzip);
+  //    otherwise a flat list (each opportunity's kit shows only its files)
   const shareUrl = code => new URL(`get.html?code=${code}`, location.href).href;
   const fileUrl = x => sb.storage.from('files').getPublicUrl(x.path, { download: x.name }).data.publicUrl;
   const ext = n => (n.includes('.') ? n.split('.').pop() : 'file').slice(0, 4).toUpperCase();
-  function fileManager({ rows, drop, pick, msg, opp = null, after = () => {} }) {
-    let files = [];
-    const drawFiles = () => {
-      rows.innerHTML = files.length ? files.map(x => `
-        <div class="file-card${x.code ? '' : ' off'}">
-          <span class="file-ic">${esc(ext(x.name))}</span>
-          <div class="file-info">
-            <a href="${esc(fileUrl(x))}" title="Download">${esc(x.name)}</a>
-            <span class="meta">${fmtSize(x.size)} · ${fmtDay(x.created_at)} · ${x.downloads} download${x.downloads === 1 ? '' : 's'}</span>
-          </div>
-          ${x.code
-            ? `<button class="code-pill" data-copy="${x.code}" title="Copy code">${x.code.slice(0, 3)}<span>${x.code.slice(3)}</span>${ICON.copy}</button>`
-            : '<span class="lock">sharing off</span>'}
-          <div class="icon-btns">
-            ${x.code ? `<button data-link="${x.code}" title="Copy share link" aria-label="Copy share link">${ICON.link}</button>` : ''}
-            <button data-regen="${x.id}" title="${x.code ? 'New code' : 'Turn sharing on'}" aria-label="${x.code ? 'New code' : 'Turn sharing on'}">${ICON.refresh}</button>
-            ${x.code ? `<button data-revoke="${x.id}" title="Turn sharing off" aria-label="Turn sharing off">${ICON.off}</button>` : ''}
-            <button class="danger" data-rm="${x.id}" data-path="${esc(x.path)}" title="Delete" aria-label="Delete">${ICON.trash}</button>
-          </div>
-        </div>`).join('')
-        : '<div class="empty-state"><b>No files yet</b><span class="meta">Drop one above to get a 6-digit code.</span></div>';
+  const MIME = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+    txt: 'text/plain', md: 'text/markdown', csv: 'text/csv', json: 'application/json', html: 'text/html', zip: 'application/zip', mp4: 'video/mp4', mp3: 'audio/mpeg',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', py: 'text/x-python', ipynb: 'application/json' };
+  const mimeOf = n => MIME[(n.split('.').pop() || '').toLowerCase()] || 'application/octet-stream';
+  const storeName = n => `${crypto.randomUUID()}/${n.replace(/[^\w.\- ]+/g, '_') || 'file'}`;
+  const FOLDER_IC = '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+
+  function fileManager({ rows, drop, pick, msg, opp = null, browse = false, after = () => {} }) {
+    let files = [], folders = [], cwd = null, canBrowse = browse;
+    const sel = new Set();                                                     // 'f:<id>' or 'd:<id>'
+    const dirOf = id => folders.find(f => f.id === id);
+    const kids = id => folders.filter(f => (f.parent_id || null) === id).sort((a, b) => a.name.localeCompare(b.name));
+    const inDir = id => files.filter(f => (f.folder_id || null) === id);
+    const below = id => { const out = [id]; for (let i = 0; i < out.length; i++) out.push(...kids(out[i]).map(f => f.id)); return out; };   // a folder + all its subfolders
+    const path = id => { const out = []; for (let d = dirOf(id); d; d = dirOf(d.parent_id)) out.unshift(d); return out; };
+    const say = html => { msg.innerHTML = html; };
+
+    const fileCard = x => `
+      <div class="file-card${x.code ? '' : ' off'}${sel.has('f:' + x.id) ? ' sel' : ''}"${canBrowse ? ` draggable="true" data-drag="f:${x.id}"` : ''}>
+        ${canBrowse ? `<label class="pick-box"><input type="checkbox" data-sel="f:${x.id}"${sel.has('f:' + x.id) ? ' checked' : ''} aria-label="Select ${esc(x.name)}"></label>` : ''}
+        <span class="file-ic">${esc(ext(x.name))}</span>
+        <div class="file-info">
+          <a href="${esc(fileUrl(x))}" title="Download">${esc(x.name)}</a>
+          <span class="meta">${fmtSize(x.size)} · ${fmtDay(x.created_at)} · ${x.downloads} download${x.downloads === 1 ? '' : 's'}</span>
+        </div>
+        ${x.code
+          ? `<button class="code-pill" data-copy="${x.code}" title="Copy code">${x.code.slice(0, 3)}<span>${x.code.slice(3)}</span>${ICON.copy}</button>`
+          : '<span class="lock">sharing off</span>'}
+        <div class="icon-btns">
+          ${canBrowse && /\.zip$/i.test(x.name) ? `<button class="unzip" data-unzip="${x.id}" title="Extract into a folder" aria-label="Unzip">Unzip</button>` : ''}
+          ${canBrowse ? `<button data-ren="f:${x.id}" title="Rename" aria-label="Rename">${ICON.edit}</button>` : ''}
+          ${x.code ? `<button data-link="${x.code}" title="Copy share link" aria-label="Copy share link">${ICON.link}</button>` : ''}
+          <button data-regen="${x.id}" title="${x.code ? 'New code' : 'Turn sharing on'}" aria-label="${x.code ? 'New code' : 'Turn sharing on'}">${ICON.refresh}</button>
+          ${x.code ? `<button data-revoke="${x.id}" title="Turn sharing off" aria-label="Turn sharing off">${ICON.off}</button>` : ''}
+          <button class="danger" data-del="f:${x.id}" title="Delete" aria-label="Delete">${ICON.trash}</button>
+        </div>
+      </div>`;
+    const folderCard = d => `
+      <div class="file-card folder${sel.has('d:' + d.id) ? ' sel' : ''}" draggable="true" data-drag="d:${d.id}" data-dropdir="${d.id}">
+        <label class="pick-box"><input type="checkbox" data-sel="d:${d.id}"${sel.has('d:' + d.id) ? ' checked' : ''} aria-label="Select ${esc(d.name)}"></label>
+        <span class="file-ic dir">${FOLDER_IC}</span>
+        <div class="file-info"><button type="button" class="dir-open" data-open="${d.id}">${esc(d.name)}</button><span class="meta">${kids(d.id).length + inDir(d.id).length} item${kids(d.id).length + inDir(d.id).length === 1 ? '' : 's'}</span></div>
+        <div class="icon-btns"><button data-ren="d:${d.id}" title="Rename" aria-label="Rename">${ICON.edit}</button><button class="danger" data-del="d:${d.id}" title="Delete folder" aria-label="Delete folder">${ICON.trash}</button></div>
+      </div>`;
+    const draw = () => {
+      if (!canBrowse) {
+        rows.innerHTML = files.length ? files.map(fileCard).join('') : '<div class="empty-state"><b>No files yet</b><span class="meta">Drop one above to get a 6-digit code.</span></div>';
+        return;
+      }
+      const dirs = kids(cwd), here = inDir(cwd), ids = [...dirs.map(d => 'd:' + d.id), ...here.map(f => 'f:' + f.id)], n = sel.size;
+      rows.innerHTML = `
+        <div class="fm-bar">
+          <nav class="crumbs" aria-label="Folder path"><button type="button" data-open="" data-dropdir="">Files</button>${path(cwd).map(c => `<span aria-hidden="true">/</span><button type="button" data-open="${c.id}" data-dropdir="${c.id}">${esc(c.name)}</button>`).join('')}</nav>
+          <div class="fm-actions">${n ? `<span class="meta">${n} selected</span><button type="button" class="btn btn-sm ghost" data-act="move">Move to…</button><button type="button" class="btn btn-sm ghost" data-act="copy">Copy to…</button><button type="button" class="btn btn-sm ghost fm-danger" data-act="delete">Delete</button><button type="button" class="btn btn-sm ghost" data-act="clear">Clear</button>` : ''}<button type="button" class="btn btn-sm" data-act="mkdir">+ New folder</button></div>
+        </div>
+        ${ids.length ? `<label class="sel-all"><input type="checkbox" data-selall${ids.every(i => sel.has(i)) ? ' checked' : ''}> Select all</label>${dirs.map(folderCard).join('')}${here.map(fileCard).join('')}`
+          : `<div class="empty-state"><b>${cwd ? 'This folder is empty' : 'No files yet'}</b><span class="meta">Upload above (files land in the folder you are in), or drag files here.</span></div>`}`;
     };
     async function load() {
       let q = sb.from('files').select('*').order('created_at', { ascending: false });
       if (opp) q = q.eq('opportunity_id', opp);
-      const { data, error } = await q;
+      const [{ data, error }, fo] = await Promise.all([q, browse ? sb.from('folders').select('*').order('name') : { data: [] }]);
       if (error) return fail(rows, error);
-      files = data; drawFiles(); after(files);
+      files = data;
+      canBrowse = browse && !fo.error;
+      folders = fo.data || [];
+      if (cwd && !dirOf(cwd)) cwd = null;
+      for (const k of [...sel]) if (!(k[0] === 'f' ? files.some(f => 'f:' + f.id === k) : folders.some(d => 'd:' + d.id === k))) sel.delete(k);
+      draw(); after(files);
+      if (browse && fo.error) say('Run <code>supabase/folders.sql</code> once to turn on folders, move, copy and unzip.');
     }
+
+    // ── operations
+    const pickFolder = (title, blocked = []) => new Promise(resolve => {     // a small dialog with the folder tree
+      const dlg = document.createElement('dialog');
+      dlg.className = 'op-dialog fm-dlg';
+      const tree = (id, depth) => kids(id).map(d => `<label class="fm-opt" style="--d:${depth}"><input type="radio" name="to" value="${d.id}"${blocked.includes(d.id) ? ' disabled' : ''}> ${FOLDER_IC}<span>${esc(d.name)}</span></label>${tree(d.id, depth + 1)}`).join('');
+      dlg.innerHTML = `<form class="op-form" method="dialog"><div class="dialog-head full"><h2>${title}</h2><button class="x-btn" value="" aria-label="Close">✕</button></div>
+        <div class="full fm-tree"><label class="fm-opt" style="--d:0"><input type="radio" name="to" value="root" checked> ${FOLDER_IC}<span>Files (top level)</span></label>${tree(null, 1)}</div>
+        <div class="full dialog-actions"><button class="btn ghost" value="">Cancel</button><button class="btn" value="ok">${title.split(' ')[0]} here</button></div></form>`;
+      document.body.append(dlg);
+      dlg.addEventListener('close', () => { const ok = dlg.returnValue === 'ok', v = dlg.querySelector('[name=to]:checked')?.value; dlg.remove(); resolve(ok ? (v === 'root' ? null : v) : undefined); });
+      dlg.showModal();
+    });
+    const split = keys => ({ fileIds: keys.filter(k => k[0] === 'f').map(k => k.slice(2)), dirIds: keys.filter(k => k[0] === 'd').map(k => k.slice(2)) });
+    async function moveTo(keys, target) {
+      const { fileIds, dirIds } = split(keys);
+      if (dirIds.some(id => below(id).includes(target))) return toast('A folder can’t go inside itself.');
+      const res = await Promise.all([
+        fileIds.length ? sb.from('files').update({ folder_id: target }).in('id', fileIds) : {},
+        dirIds.length ? sb.from('folders').update({ parent_id: target }).in('id', dirIds) : {}]);
+      const err = res.find(r => r.error);
+      if (err) return toast(err.error.message);
+      sel.clear(); toast(`Moved ${keys.length} item${keys.length === 1 ? '' : 's'} to ${target ? dirOf(target).name : 'Files'}`); load();
+    }
+    async function copyFile(x, target) {
+      const to = storeName(x.name);
+      const { error: se } = await sb.storage.from('files').copy(x.path, to);
+      if (se) throw se;
+      const { error } = await sb.from('files').insert({ name: x.name, path: to, size: x.size, mime: x.mime, folder_id: target, opportunity_id: x.opportunity_id || null });
+      if (error) { await sb.storage.from('files').remove([to]); throw error; }
+    }
+    async function copyFolder(d, target, rename) {
+      const { data: nd, error } = await sb.from('folders').insert({ name: rename ? `${d.name} copy` : d.name, parent_id: target }).select().single();
+      if (error) throw error;
+      for (const x of inDir(d.id)) await copyFile(x, nd.id);
+      for (const k of kids(d.id)) await copyFolder(k, nd.id, false);
+    }
+    async function copyTo(keys, target) {
+      const { fileIds, dirIds } = split(keys);
+      if (dirIds.some(id => below(id).includes(target))) return toast('A folder can’t be copied into itself.');
+      try {
+        say('Copying…');
+        for (const id of fileIds) await copyFile(files.find(f => f.id === id), target);
+        for (const id of dirIds) { const d = dirOf(id); await copyFolder(d, target, (d.parent_id || null) === target); }
+        sel.clear(); say(''); toast(`Copied ${keys.length} item${keys.length === 1 ? '' : 's'} (copies get their own codes)`);
+      } catch (e) { say(esc(e.message)); }
+      load();
+    }
+    async function remove(keys) {
+      const { fileIds, dirIds } = split(keys), allDirs = dirIds.flatMap(below);
+      const doomed = files.filter(f => fileIds.includes(f.id) || allDirs.includes(f.folder_id));
+      const what = `${doomed.length} file${doomed.length === 1 ? '' : 's'}${dirIds.length ? ` and ${allDirs.length} folder${allDirs.length === 1 ? '' : 's'}` : ''}`;
+      if (!confirm(`Delete ${what} for good? Their share codes stop working.`)) return;
+      for (let i = 0; i < doomed.length; i += 100) {
+        const { error } = await sb.storage.from('files').remove(doomed.slice(i, i + 100).map(f => f.path));
+        if (error) return toast(error.message);
+      }
+      const res = await Promise.all([
+        doomed.length ? sb.from('files').delete().in('id', doomed.map(f => f.id)) : {},
+        dirIds.length ? sb.from('folders').delete().in('id', dirIds) : {}]);   // subfolders go with them (on delete cascade)
+      const err = res.find(r => r.error);
+      if (err) return toast(err.error.message);
+      sel.clear(); toast(`Deleted ${what}`); load();
+    }
+    async function rename(key) {
+      const isDir = key[0] === 'd', id = key.slice(2), cur = isDir ? dirOf(id).name : files.find(f => f.id === id).name;
+      const name = (prompt(`New name for “${cur}”`, cur) || '').trim();
+      if (!name || name === cur) return;
+      if (name.length > 200 || /[\\/]/.test(name)) return toast('Names can’t contain / or \\.');
+      const { error } = await sb.from(isDir ? 'folders' : 'files').update({ name }).eq('id', id);
+      if (error) return toast(error.message);
+      toast('Renamed'); load();
+    }
+    async function unzip(x) {
+      try {
+        say(`Opening ${esc(x.name)}…`);
+        const { data: blob, error } = await sb.storage.from('files').download(x.path);
+        if (error) throw error;
+        const entries = (await readZip(await blob.arrayBuffer()))
+          .filter(en => !/(^|\/)(__MACOSX|\.DS_Store$|Thumbs\.db$)/i.test(en.name))
+          .map(en => ({ ...en, parts: en.name.split('/').filter(s => s && s !== '.' && s !== '..') }))
+          .filter(en => en.parts.length);
+        const fileEntries = entries.filter(en => !en.dir);
+        if (!fileEntries.length) throw new Error('The zip is empty.');
+        if (fileEntries.length > 2000) throw new Error('That zip has more than 2,000 files; split it up first.');
+        const { data: base, error: fe } = await sb.from('folders').insert({ name: x.name.replace(/\.zip$/i, ''), parent_id: x.folder_id || null }).select().single();
+        if (fe) throw fe;
+        const made = { '': base.id };
+        const dirFor = async parts => {                                       // create a/b/c on demand, reuse when seen
+          let key = '';
+          for (const part of parts) {
+            const next = key ? `${key}/${part}` : part;
+            if (!made[next]) {
+              const { data: d, error: de } = await sb.from('folders').insert({ name: part.slice(0, 120), parent_id: made[key] }).select().single();
+              if (de) throw de;
+              made[next] = d.id;
+            }
+            key = next;
+          }
+          return made[key];
+        };
+        for (const en of entries.filter(en2 => en2.dir)) await dirFor(en.parts);
+        let done = 0, skipped = 0;
+        for (const en of fileEntries) {
+          say(`Extracting ${done + skipped + 1} of ${fileEntries.length}: ${esc(en.parts.at(-1))}`);
+          if (en.size > 50 * 1048576 || en.encrypted) { skipped++; continue; }
+          const leaf = en.parts.at(-1), folder = await dirFor(en.parts.slice(0, -1)), to = storeName(leaf), type = mimeOf(leaf);
+          const { error: ue } = await sb.storage.from('files').upload(to, new Blob([await en.read()], { type }), { contentType: type });
+          if (ue) throw ue;
+          const { error: ie } = await sb.from('files').insert({ name: leaf, path: to, size: en.size, mime: type, folder_id: folder });
+          if (ie) { await sb.storage.from('files').remove([to]); throw ie; }
+          done++;
+        }
+        cwd = base.id;
+        say(`Unzipped <strong>${done}</strong> file${done === 1 ? '' : 's'} into <strong>${esc(base.name)}</strong>${skipped ? ` · skipped ${skipped} (over 50 MB or password-protected)` : ''}.`);
+        toast(`Unzipped ${x.name}`);
+      } catch (e) { say(`Couldn’t unzip: ${esc(e.message || e)}`); }
+      load();
+    }
+
+    // ── events
     rows.addEventListener('click', async e => {
       const b = e.target.closest('button');
       if (!b) return;
-      if (b.dataset.copy) { await navigator.clipboard.writeText(b.dataset.copy); toast(`Code ${b.dataset.copy} copied`); }
-      if (b.dataset.link) { await navigator.clipboard.writeText(shareUrl(b.dataset.link)); toast('Share link copied'); }
-      if (b.dataset.regen) {
-        const { error } = await sb.rpc('regenerate_code', { p_id: b.dataset.regen });
+      const d = b.dataset;
+      if (d.open !== undefined) { cwd = d.open || null; sel.clear(); return draw(); }
+      if (d.copy) { await navigator.clipboard.writeText(d.copy); toast(`Code ${d.copy} copied`); }
+      if (d.link) { await navigator.clipboard.writeText(shareUrl(d.link)); toast('Share link copied'); }
+      if (d.regen) {
+        const { error } = await sb.rpc('regenerate_code', { p_id: d.regen });
         if (error) return alert(error.message);
         toast('New code issued'); load();
       }
-      if (b.dataset.revoke && confirm('Turn off sharing? The current code will stop working.')) {
-        const { error } = await sb.from('files').update({ code: null }).eq('id', b.dataset.revoke);
+      if (d.revoke && confirm('Turn off sharing? The current code will stop working.')) {
+        const { error } = await sb.from('files').update({ code: null }).eq('id', d.revoke);
         if (error) return alert(error.message);
         toast('Sharing off'); load();
       }
-      if (b.dataset.rm && confirm('Delete this file for good?')) {
-        const { error: se } = await sb.storage.from('files').remove([b.dataset.path]);
-        const { error: de } = se ? { error: se } : await sb.from('files').delete().eq('id', b.dataset.rm);
-        if (se || de) return alert((se || de).message);
-        toast('File deleted'); load();
+      if (d.del) return remove([d.del]);
+      if (d.ren) return rename(d.ren);
+      if (d.unzip) return unzip(files.find(f => f.id === d.unzip));
+      if (d.act === 'clear') { sel.clear(); return draw(); }
+      if (d.act === 'delete') return remove([...sel]);
+      if (d.act === 'mkdir') {
+        const name = (prompt('Folder name') || '').trim();
+        if (!name) return;
+        if (name.length > 120 || /[\\/]/.test(name)) return toast('Folder names can’t contain / or \\.');
+        const { error } = await sb.from('folders').insert({ name, parent_id: cwd });
+        if (error) return toast(error.message);
+        toast(`Folder “${name}” created`); return load();
+      }
+      if (d.act === 'move' || d.act === 'copy') {
+        const keys = [...sel], blocked = split(keys).dirIds.flatMap(below);
+        const target = await pickFolder(d.act === 'move' ? 'Move to' : 'Copy to', blocked);
+        if (target === undefined) return;
+        return d.act === 'move' ? moveTo(keys, target) : copyTo(keys, target);
       }
     });
+    rows.addEventListener('dblclick', e => { const c = e.target.closest('.folder'); if (c && !e.target.closest('button, input')) { cwd = c.dataset.dropdir; sel.clear(); draw(); } });
+    rows.addEventListener('change', e => {
+      const d = e.target.dataset;
+      if (d.sel) { e.target.checked ? sel.add(d.sel) : sel.delete(d.sel); return draw(); }
+      if ('selall' in d) { const ids = [...kids(cwd).map(x => 'd:' + x.id), ...inDir(cwd).map(x => 'f:' + x.id)]; ids.forEach(i => (e.target.checked ? sel.add(i) : sel.delete(i))); return draw(); }
+    });
+    // drag items onto a folder card or a breadcrumb to move them (a selected item drags the whole selection)
+    rows.addEventListener('dragstart', e => {
+      const c = e.target.closest?.('[data-drag]');
+      if (!c) return;
+      const keys = sel.has(c.dataset.drag) ? [...sel] : [c.dataset.drag];
+      e.dataTransfer.setData('application/x-fm', JSON.stringify(keys));
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    rows.addEventListener('dragover', e => {
+      const t = e.target.closest?.('[data-dropdir]');
+      if (t && e.dataTransfer.types.includes('application/x-fm')) { e.preventDefault(); t.classList.add('over'); }
+    });
+    rows.addEventListener('dragleave', e => e.target.closest?.('[data-dropdir]')?.classList.remove('over'));
+    rows.addEventListener('drop', e => {
+      const t = e.target.closest?.('[data-dropdir]');
+      if (!t || !e.dataTransfer.types.includes('application/x-fm')) return;
+      e.preventDefault(); t.classList.remove('over');
+      const keys = JSON.parse(e.dataTransfer.getData('application/x-fm')), target = t.dataset.dropdir || null;
+      if (keys.includes('d:' + target)) return;
+      moveTo(keys, target);
+    });
+
     const upload = async list => {
+      const into = canBrowse ? cwd : null;
       for (const file of list) {
-        msg.textContent = `Uploading ${file.name}…`;
-        if (file.size > 50 * 1048576) { msg.textContent = `${file.name} is over the 50 MB limit.`; continue; }
-        const path = `${crypto.randomUUID()}/${file.name.replace(/[^\w.\- ]+/g, '_')}`;
+        say(`Uploading ${esc(file.name)}${into ? ` into ${esc(dirOf(into).name)}` : ''}…`);
+        if (file.size > 50 * 1048576) { say(`${esc(file.name)} is over the 50 MB limit.`); continue; }
+        const path = storeName(file.name);
         const { error: se } = await sb.storage.from('files').upload(path, file, { contentType: file.type || undefined });
-        if (se) { msg.textContent = se.message; continue; }
-        const { data, error } = await sb.from('files').insert({ name: file.name, path, size: file.size, mime: file.type || null, opportunity_id: opp }).select('code').single();
-        if (error) { await sb.storage.from('files').remove([path]); msg.textContent = error.message; continue; }
-        msg.innerHTML = `Uploaded <strong>${esc(file.name)}</strong>. Code <span class="code">${data.code}</span>`;
+        if (se) { say(esc(se.message)); continue; }
+        const row = { name: file.name, path, size: file.size, mime: file.type || null, opportunity_id: opp };
+        if (into) row.folder_id = into;
+        const { data, error } = await sb.from('files').insert(row).select('code').single();
+        if (error) { await sb.storage.from('files').remove([path]); say(esc(error.message)); continue; }
+        say(`Uploaded <strong>${esc(file.name)}</strong>. Code <span class="code">${data.code}</span>${canBrowse && /\.zip$/i.test(file.name) ? ' · press <b>Unzip</b> on it to extract' : ''}`);
         toast(`${file.name} uploaded`);
       }
       load();

@@ -1180,3 +1180,41 @@ html.privacy body::after {
 .bk-who .t-meta { margin-top: 4px; }
 .bk-who .t-meta a { color: var(--muted); font-size: 12px; }
 .sent { color: var(--green); }
+
+/* admin Files: file manager (folders, selection, move / copy, unzip) */
+.fm-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 4px; }
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 15px; }
+.crumbs button { border: 0; background: none; color: var(--muted); font: 500 15px var(--sans); padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.crumbs button:last-of-type { color: var(--fg); font-weight: 600; }
+.crumbs button:hover, .crumbs button.over { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--fg); }
+.crumbs span { color: var(--line2); }
+.fm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fm-actions .meta { margin: 0 4px 0 0; }
+.fm-danger:hover { color: #ff5f57; border-color: rgb(255 95 87 / .5); }
+.sel-all { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin: 6px 0 2px 18px; cursor: pointer; }
+.file-card:has(.pick-box) { grid-template-columns: 20px 48px minmax(0, 1fr) auto auto; }
+.file-card.folder { grid-template-columns: 20px 48px minmax(0, 1fr) auto; cursor: default; }
+.file-card[draggable="true"] { cursor: grab; }
+.file-card.sel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--bg2)); }
+.file-card.folder.over { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--bg2)); }
+.pick-box { display: grid; place-items: center; cursor: pointer; }
+.pick-box input, .sel-all input { width: 16px; height: 16px; accent-color: var(--accent); }
+.file-ic.dir { color: var(--accent); }
+.file-ic.dir svg { width: 26px; height: 26px; fill: color-mix(in srgb, var(--accent) 22%, transparent); stroke: currentColor; stroke-width: 1.6; }
+.dir-open { all: unset; cursor: pointer; font-weight: 600; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dir-open:hover { color: var(--accent); }
+.dir-open:focus-visible { outline: 2px solid var(--accent); border-radius: 4px; }
+.icon-btns .unzip { width: auto; padding: 0 10px; font: 600 12px var(--mono); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.icon-btns .unzip:hover { background: var(--accent); color: var(--on-accent); }
+.fm-dlg { width: min(460px, 94vw); }
+.fm-tree { display: grid; gap: 2px; max-height: 50vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; padding: 6px; }
+.op-form .fm-opt { display: flex; align-items: center; gap: 8px; padding: 7px 10px 7px calc(10px + var(--d) * 18px); border-radius: 8px; cursor: pointer; color: var(--fg); font-size: 14px; }
+.op-form .fm-opt:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.op-form .fm-opt:has(input:checked) { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.op-form .fm-opt:has(input:disabled) { opacity: .4; cursor: not-allowed; }
+.op-form .fm-opt input { width: auto; accent-color: var(--accent); }
+.fm-opt svg { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--accent); stroke-width: 1.8; }
+@media (max-width: 760px) {
+  .file-card:has(.pick-box), .file-card.folder { grid-template-columns: 20px 40px minmax(0, 1fr); }
+  .file-card:has(.pick-box) .code-pill, .file-card:has(.pick-box) > .lock, .file-card:has(.pick-box) .icon-btns { grid-column: 1 / -1; }
+}
