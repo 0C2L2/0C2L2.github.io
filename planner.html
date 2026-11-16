@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=5112233e">
+  <link rel="stylesheet" href="style.css?v=d70e3587">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#0b0b0c">
@@ -54,7 +54,7 @@
       </div>
     </div>
     <div class="chips pl-tabs" role="group" aria-label="Planner views">
-      <button type="button" data-v="today" title="1">Today</button><button type="button" data-v="calendar" title="2">Calendar</button><button type="button" data-v="tasks" title="3">Tasks</button><button type="button" data-v="notes" title="4">Notes</button><button type="button" data-v="focus" title="5">Focus timer</button><button type="button" data-v="stats" title="6">Analytics</button>
+      <button type="button" data-v="today" title="1">Today</button><button type="button" data-v="calendar" title="2">Calendar</button><button type="button" data-v="tasks" title="3">Tasks</button><button type="button" data-v="notes" title="4">Notes</button><button type="button" data-v="focus" title="5">Time</button><button type="button" data-v="stats" title="6">Analytics</button>
     </div>
     <div id="pl-view"></div>
   </section>
@@ -82,6 +82,24 @@
       <div class="full dialog-actions"><button id="task-del" class="btn ghost del-btn" type="button">Delete</button><span class="grow"></span><button class="btn ghost" type="button" data-close>Cancel</button><button class="btn" type="submit">Save</button></div>
     </form>
   </dialog>
+  <dialog id="entry-dialog" class="op-dialog">
+    <form id="entry-form" class="op-form">
+      <div class="dialog-head full"><h2 id="entry-h">Add time manually</h2><button class="x-btn" type="button" data-close aria-label="Close">✕</button></div>
+      <input name="id" type="hidden">
+      <label class="full">Description <input name="label" maxlength="200" placeholder="What did you work on?"></label>
+      <label>Project <input name="project" list="entry-list" placeholder="e.g. DUBBE" autocomplete="off"></label>
+      <datalist id="entry-list"></datalist>
+      <label>Task <select name="task_id"></select></label>
+      <label>Date <input name="date" type="date" required></label>
+      <label>Duration <input name="duration" placeholder="1h 30m" autocomplete="off"></label>
+      <label>Start <input name="start" type="time" required></label>
+      <label>End <input name="end" type="time"></label>
+      <p class="meta full">Fill in an end time or a duration (1h 30m, 90m, 1.5h or 1:30); the other one follows.</p>
+      <p id="entry-msg" class="meta full" aria-live="polite"></p>
+      <div class="full dialog-actions"><button id="entry-del" class="btn ghost del-btn" type="button">Delete</button><span class="grow"></span><button class="btn ghost" type="button" data-close>Cancel</button><button class="btn" type="submit">Save</button></div>
+    </form>
+  </dialog>
+
   <dialog id="push-dialog" class="op-dialog">
     <div class="op-form">
       <div class="dialog-head full"><h2>Reminders</h2><button class="x-btn" type="button" data-close aria-label="Close">✕</button></div>
@@ -104,8 +122,8 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="theme.js?v=5112233e"></script>
-<script src="app.js?v=5112233e"></script>
-<script src="planner.js?v=5112233e"></script>
+<script src="theme.js?v=d70e3587"></script>
+<script src="app.js?v=d70e3587"></script>
+<script src="planner.js?v=d70e3587"></script>
 </body>
 </html>

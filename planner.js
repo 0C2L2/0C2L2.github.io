@@ -59,7 +59,7 @@
   }
 
   async function load() {
-    const since = addDays(new Date(), -120).toISOString();
+    const since = addDays(new Date(), -150).toISOString();
     const [t, n, f, o] = await Promise.all([
       sb.from('tasks').select('*').order('created_at'),
       sb.from('notes').select('*').order('updated_at', { ascending: false }),
@@ -69,6 +69,7 @@
     if (err) throw err;
     tasks = t.data; notes = n.data; sessions = f.data; opps = o.data;
     hasRemind = !(await sb.from('tasks').select('remind_min').limit(1)).error;
+    hasTime = !(await sb.from('focus_sessions').select('project').limit(1)).error;
   }
 
   // ───────── what lands on a given day: timed blocks + all-day items (tasks due, deadlines)
@@ -266,7 +267,7 @@
     return `
       <div class="stats-row pl-stats">
         ${tile('Done today', doneToday, `${open.length} open`)}
-        ${tile('Focus today', dur(todays.reduce((a, s) => a + s.minutes, 0)), `${todays.length} session${todays.length === 1 ? '' : 's'}`)}
+        ${tile('Tracked today', dur(todays.reduce((a, s) => a + s.minutes, 0)), `${todays.length} entr${todays.length === 1 ? 'y' : 'ies'}`)}
         ${tile('Overdue', overdue.length, overdue.length ? 'catch up first' : 'all clear', overdue.length ? 'hot' : '')}
         ${tile('Streak', `${streak()}d`, 'days in a row with progress')}
       </div>
@@ -283,18 +284,19 @@
       </div>`;
   }
 
+  const weekDays = () => innerWidth < 700 ? 3 : 7;
   function vCalendar() {
     const a = cal.anchor;
     let label, body;
     if (cal.mode === 'month') { label = fmt(a, { month: 'long', year: 'numeric' }); body = monthGrid(a); }
-    else if (cal.mode === 'week') {
-      const s = startOfWeek(a), e = addDays(s, 6);
+    else if (cal.mode === 'week') {   // phones get 3 readable days instead of 7 squashed ones
+      const n = weekDays(), s = n === 7 ? startOfWeek(a) : dayStart(a), e = addDays(s, n - 1);
       label = `${fmt(s, { month: 'short', day: 'numeric' })} – ${fmt(e, s.getMonth() === e.getMonth() ? { day: 'numeric' } : { month: 'short', day: 'numeric' })}, ${e.getFullYear()}`;
-      body = timeGrid(Array.from({ length: 7 }, (_, k) => ymd(addDays(s, k))));
+      body = timeGrid(Array.from({ length: n }, (_, k) => ymd(addDays(s, k))));
     } else { label = fmt(a, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }); body = timeGrid([ymd(a)]); }
     return `<div class="cal-bar">
         <div class="cal-nav"><button type="button" class="btn btn-sm ghost" data-cal="prev" aria-label="Previous">‹</button><button type="button" class="btn btn-sm ghost" data-cal="today">Today</button><button type="button" class="btn btn-sm ghost" data-cal="next" aria-label="Next">›</button><h2>${label}</h2></div>
-        <div class="chips">${['month', 'week', 'day'].map(m => `<button type="button" data-calmode="${m}" aria-pressed="${cal.mode === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div>
+        <div class="chips">${['month', 'week', 'day'].map(m => `<button type="button" data-calmode="${m}" aria-pressed="${cal.mode === m}">${m === 'week' && weekDays() === 3 ? '3 days' : m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div>
         <div class="cal-add"><button type="button" class="btn btn-sm ghost" data-new="task" data-day="${ymd(a)}">+ Task</button><button type="button" class="btn btn-sm" data-new="event" data-day="${ymd(a)}">+ Event</button></div>
       </div>
       <p class="meta cal-hint">Click an empty slot to add something there · <span class="lg lg-event"></span>event <span class="lg lg-task"></span>task <span class="lg lg-dl"></span>opportunity deadline</p>
@@ -357,21 +359,42 @@
       </section></div>`;
   }
 
-  // ───────── focus timer (pomodoro + stopwatch); state survives reloads
+  // ───────── time tracking: stopwatch / pomodoro tracker, manual entries, log, timesheet. Timer state survives reloads.
   const CFG = () => ({ focus: 25, short: 5, long: 15, every: 4, ...store.get('pl-timer-cfg', {}) });
-  const T = store.get('pl-timer', null) || { mode: 'pomo', phase: 'focus', running: false, remaining: null, endsAt: null, startedAt: null, elapsed: 0, runSince: null, taskId: null, label: '', count: 0 };
+  const GOAL = () => ({ day: 6, week: 30, ...store.get('pl-goal', {}) });   // hours
+  const T = { mode: 'watch', phase: 'focus', running: false, remaining: null, endsAt: null, startedAt: null, elapsed: 0, runSince: null, taskId: null, label: '', project: '', count: 0, ...store.get('pl-timer', {}) };
   const saveT = () => store.set('pl-timer', T);
   const phaseLen = () => CFG()[T.phase] * 6e4;
   const leftMs = () => T.mode === 'pomo' ? (T.running ? T.endsAt - Date.now() : (T.remaining ?? phaseLen())) : (T.elapsed + (T.running ? Date.now() - T.runSince : 0));
   const clock = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${s >= 3600 ? Math.floor(s / 3600) + ':' : ''}${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`; };
   const beep = () => { try { const c = new AudioContext(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.frequency.value = 880; g.gain.setValueAtTime(.2, c.currentTime); g.gain.exponentialRampToValueAtTime(.001, c.currentTime + .8); o.start(); o.stop(c.currentTime + .8); } catch (e) {} };
   const notify = msg => { beep(); toast(msg); try { if (Notification.permission === 'granted') new Notification('Planner', { body: msg }); } catch (e) {} };
+  let hasTime = false;   // project + source columns exist (supabase/time.sql)
+  const sday = s => ymd(new Date(s.started_at));
+  const sumMin = list => list.reduce((a, s) => a + s.minutes, 0);
+  const hmm = m => m ? `${Math.floor(m / 60)}:${pad(m % 60)}` : '';
+  const projOf = s => s.project || (byId(s.task_id)?.tags[0] ? `#${byId(s.task_id).tags[0]}` : 'No project');
+  const projects = () => [...new Set(sessions.map(s => s.project).filter(Boolean))].sort();
+  const dayName = d => { const r = relDay(d); return r === 'Today' || r === 'Yesterday' ? r : fmt(parseYmd(d), { weekday: 'short', month: 'short', day: 'numeric' }); };
+  // "1h 30m", "1.5h", "90", "90m", "1:30" → minutes
+  const parseDur = s => {
+    s = String(s || '').trim().toLowerCase();
+    if (!s) return null;
+    let m;
+    if ((m = s.match(/^(\d+):(\d{1,2})$/))) return +m[1] * 60 + +m[2];
+    if ((m = s.match(/^(\d+(?:\.\d+)?)\s*h(?:\s*(\d+)\s*m(?:in)?)?$/))) return Math.round(+m[1] * 60) + (+m[2] || 0);
+    if ((m = s.match(/^(\d+)\s*(?:m|min)?$/))) return +m[1];
+    return NaN;
+  };
+
   async function logSession(start, end) {
     const minutes = Math.round((end - start) / 6e4);
-    if (minutes < 1) return;
-    const { data, error } = await sb.from('focus_sessions').insert({ task_id: T.taskId || null, label: T.label || (byId(T.taskId)?.title ?? null), started_at: new Date(start).toISOString(), ended_at: new Date(end).toISOString(), minutes }).select().single();
-    if (error) return toast(`Could not save session: ${error.message}`);
-    sessions.push(data); toast(`Logged ${dur(minutes)} of focus`);
+    if (minutes < 1) return toast('Under a minute, so not logged');
+    const row = { task_id: T.taskId || null, label: T.label.trim() || (byId(T.taskId)?.title ?? null), started_at: new Date(start).toISOString(), ended_at: new Date(end).toISOString(), minutes };
+    if (hasTime) Object.assign(row, { project: (T.project || '').trim() || null, source: 'timer' });
+    const { data, error } = await sb.from('focus_sessions').insert(row).select().single();
+    if (error) return toast(`Could not save the time: ${error.message}`);
+    sessions.push(data); toast(`Logged ${dur(minutes)}`);
   }
   const timer = {
     start() {
@@ -385,7 +408,7 @@
       T.running = false; saveT(); render();
     },
     reset() { Object.assign(T, { phase: 'focus', running: false, remaining: null, endsAt: null, startedAt: null, elapsed: 0, runSince: null }); saveT(); render(); },
-    async finish() {   // pomodoro: end the current block now (logs focus so far); stopwatch: save
+    async finish() {   // stopwatch: stop and save; pomodoro: end this block now (logs the focus so far)
       const end = Date.now();
       if (T.mode === 'watch') { const ms = leftMs(); if (T.startedAt) await logSession(end - ms, end); return timer.reset(); }
       if (T.phase === 'focus' && T.startedAt) { await logSession(T.startedAt, end); T.count++; }
@@ -409,91 +432,244 @@
       ending = false;
     }
     const ms = leftMs(), active = T.running || (T.mode === 'pomo' ? T.remaining !== null : T.elapsed > 0);
-    const label = T.mode === 'watch' ? 'Stopwatch' : T.phase === 'focus' ? 'Focus' : 'Break';
+    const what = T.mode === 'pomo' && T.phase !== 'focus' ? 'Break' : (T.label.trim() || byId(T.taskId)?.title || (T.mode === 'pomo' ? 'Focus' : 'Tracking'));
     const mini = $('#mini-timer');
-    if (mini) { mini.hidden = !active; mini.innerHTML = `<i class="${T.running ? 'on' : ''}"></i>${clock(ms)} <span>${label}</span>`; }
-    document.title = active ? `${clock(ms)} · ${label} — Planner` : 'Planner — Rashid Tagaev';
+    if (mini) { mini.hidden = !active; mini.innerHTML = `<i class="${T.running ? 'on' : ''}"></i>${clock(ms)} <span>${esc(what.slice(0, 28))}</span>`; }
+    document.title = active ? `${clock(ms)} · ${what} — Planner` : 'Planner — Rashid Tagaev';
     const big = $('#t-clock');
-    if (big) {
-      big.textContent = clock(ms);
-      const ring = $('#t-ring');
-      if (ring) ring.style.strokeDashoffset = String(565.5 * (1 - Math.min(1, Math.max(0, ms / phaseLen()))));
-    }
+    if (big) big.textContent = clock(ms);
+    const bar = $('#t-bar');
+    if (bar) bar.style.setProperty('--p', `${(100 * (1 - Math.min(1, Math.max(0, ms / phaseLen())))).toFixed(2)}%`);
   }
+
+  let timeMode = store.get('pl-time', 'log'), sheetAnchor = new Date(), logDays = 14;
+  const goalTile = (k, m, goalH, sub) => {
+    const p = goalH ? Math.min(100, 100 * m / (goalH * 60)) : 0;
+    return `<div class="stat-tile${p >= 100 ? ' met' : ''}"><span class="stat-k">${k}</span><b>${dur(m)}</b><span class="stat-s">${sub}</span>${goalH ? `<i class="goal-bar" style="--p:${p.toFixed(1)}%" title="${Math.round(p)}% of ${goalH}h"></i>` : ''}</div>`;
+  };
   function vFocus() {
-    const c = CFG(), t = todayStr();
-    const todays = sessions.filter(s => ymd(new Date(s.started_at)) === t).slice().reverse();
+    const c = CFG(), g = GOAL(), t = todayStr(), wk0 = ymd(startOfWeek(new Date()));
+    const week = sessions.filter(s => sday(s) >= wk0), today = sumMin(sessions.filter(s => sday(s) === t)), weekMin = sumMin(week);
+    const daysIn = (new Date().getDay() + 6) % 7 + 1;
+    const byP = {}; for (const s of week) byP[projOf(s)] = (byP[projOf(s)] || 0) + s.minutes;
+    const top = Object.entries(byP).sort((a, b) => b[1] - a[1])[0];
     const open = tasks.filter(x => x.kind === 'task' && x.status !== 'done');
-    const label = T.mode === 'watch' ? 'Stopwatch' : { focus: 'Focus', short: 'Short break', long: 'Long break' }[T.phase];
-    return `<div class="focus">
-      <section class="pl-card focus-main">
-        <div class="chips">${[['pomo', 'Pomodoro'], ['watch', 'Stopwatch']].map(([m, l]) => `<button type="button" data-tmodeset="${m}" aria-pressed="${T.mode === m}"${T.running ? ' disabled' : ''}>${l}</button>`).join('')}</div>
-        <div class="ring"><svg viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="90"/>${T.mode === 'pomo' ? '<circle id="t-ring" class="prog" cx="100" cy="100" r="90"/>' : ''}</svg>
-          <div><span class="t-phase">${label}</span><b id="t-clock">${clock(leftMs())}</b><span class="meta">${T.mode === 'pomo' ? `${T.count} focus block${T.count === 1 ? '' : 's'} done · long break every ${c.every}` : 'Counts up until you save'}</span></div></div>
-        <div class="actions t-actions">
-          <button type="button" class="btn" data-timer="${T.running ? 'pause' : 'start'}">${T.running ? 'Pause' : 'Start'}</button>
-          <button type="button" class="btn ghost" data-timer="finish">${T.mode === 'watch' ? 'Stop & save' : T.phase === 'focus' ? 'Finish early' : 'Skip break'}</button>
-          <button type="button" class="btn ghost" data-timer="reset">Reset</button>
+    const pomo = T.mode === 'pomo', phase = { focus: 'Focus', short: 'Short break', long: 'Long break' }[T.phase];
+    return `
+      <section class="pl-card tracker">
+        <input class="tr-desc" data-tdesc value="${esc(T.label)}" placeholder="What are you working on?" aria-label="What are you working on" autocomplete="off">
+        ${hasTime ? `<input class="tr-proj" data-tproj list="proj-list" value="${esc(T.project || '')}" placeholder="Project" aria-label="Project" autocomplete="off">` : ''}
+        <select class="tr-task" data-ttask aria-label="Task"><option value="">No task</option>${open.map(x => `<option value="${x.id}"${x.id === T.taskId ? ' selected' : ''}>${esc(x.title)}</option>`).join('')}</select>
+        <div class="chips tr-mode">${[['watch', 'Stopwatch'], ['pomo', 'Pomodoro']].map(([m, l]) => `<button type="button" data-tmodeset="${m}" aria-pressed="${T.mode === m}"${T.running ? ' disabled' : ''}>${l}</button>`).join('')}</div>
+        <b id="t-clock" class="tr-clock">${clock(leftMs())}</b>
+        <div class="tr-btns">
+          <button type="button" class="btn${T.running ? ' ghost' : ''}" data-timer="${T.running ? 'pause' : 'start'}">${T.running ? '❚❚ Pause' : '▶ Start'}</button>
+          <button type="button" class="btn${T.running ? '' : ' ghost'}" data-timer="finish">${pomo && T.phase !== 'focus' ? 'Skip break' : '■ Stop'}</button>
+          <button type="button" class="btn ghost" data-timer="reset" title="Discard without saving" aria-label="Discard">✕</button>
         </div>
-        <label class="t-task">Working on <select data-ttask><option value="">No task</option>${open.map(x => `<option value="${x.id}"${x.id === T.taskId ? ' selected' : ''}>${esc(x.title)}</option>`).join('')}</select></label>
-        <details class="t-cfg"><summary>Timer settings</summary>
-          <div class="cfg-grid">${[['focus', 'Focus (min)'], ['short', 'Short break'], ['long', 'Long break'], ['every', 'Long break every']].map(([k, l]) => `<label>${l} <input type="number" min="1" max="${k === 'every' ? 12 : 180}" data-cfg="${k}" value="${c[k]}"></label>`).join('')}</div>
-        </details>
+        ${pomo ? `<div class="tr-pomo"><span>${phase} · ${T.count} block${T.count === 1 ? '' : 's'} done · long break every ${c.every}</span><i id="t-bar"></i></div>` : ''}
       </section>
-      <section class="pl-card"><h3>Today · ${dur(todays.reduce((a, s) => a + s.minutes, 0))}</h3>
-        ${todays.length ? todays.map(s => `<div class="sess"><span>${hm(new Date(s.started_at))}–${hm(new Date(s.ended_at))}</span><b>${esc(s.label || 'Focus')}</b><em>${dur(s.minutes)}</em></div>`).join('') : '<p class="meta">No focus sessions yet today.</p>'}
-      </section></div>`;
+      <datalist id="proj-list">${projects().map(p => `<option value="${esc(p)}">`).join('')}</datalist>
+      <div class="stats-row pl-stats">
+        ${goalTile('Today', today, g.day, `goal ${g.day}h`)}
+        ${goalTile('This week', weekMin, g.week, `goal ${g.week}h`)}
+        ${tile('Daily average', dur(Math.round(weekMin / daysIn)), 'this week so far')}
+        ${tile('Top project', top ? esc(top[0]) : '–', top ? `${dur(top[1])} this week` : 'nothing tracked yet')}
+      </div>
+      <section class="pl-card">
+        <div class="time-bar">
+          <div class="chips">${[['log', 'Time log'], ['sheet', 'Timesheet']].map(([m, l]) => `<button type="button" data-timemode="${m}" aria-pressed="${timeMode === m}">${l}</button>`).join('')}</div>
+          <div class="actions"><button type="button" class="btn btn-sm" data-addentry>+ Add time manually</button><button type="button" class="btn btn-sm ghost" data-export>Export CSV</button></div>
+        </div>
+        ${timeMode === 'sheet' ? vSheet() : vLog()}
+      </section>
+      <details class="pl-card t-cfg"><summary>Goals &amp; Pomodoro settings</summary>
+        <div class="cfg-grid">
+          <label>Daily goal (hours) <input type="number" min="0.5" max="24" step="0.5" data-goal="day" value="${g.day}"></label>
+          <label>Weekly goal (hours) <input type="number" min="1" max="120" step="1" data-goal="week" value="${g.week}"></label>
+          ${[['focus', 'Focus block (min)'], ['short', 'Short break (min)'], ['long', 'Long break (min)'], ['every', 'Long break every']].map(([k, l]) => `<label>${l} <input type="number" min="1" max="${k === 'every' ? 12 : 180}" data-cfg="${k}" value="${c[k]}"></label>`).join('')}
+        </div>
+      </details>
+      ${hasTime ? '' : '<p class="notice">Run <code>supabase/time.sql</code> once to add projects and mark manual entries.</p>'}`;
   }
+  const entryRow = s => {
+    const task = byId(s.task_id), title = s.label || task?.title || 'Untitled';
+    return `<div class="entry">
+      <span class="en-time">${hm(new Date(s.started_at))}–${hm(new Date(s.ended_at))}</span>
+      <button type="button" class="en-main" data-editentry="${s.id}"><b>${esc(title)}</b><span class="t-meta">${s.project ? `<span class="proj">${esc(s.project)}</span>` : ''}${task && task.title !== title ? `<span>☑ ${esc(task.title)}</span>` : ''}${s.source === 'manual' ? '<span>manual</span>' : ''}</span></button>
+      <em class="en-dur">${dur(s.minutes)}</em>
+      <div class="icon-btns"><button type="button" data-cont="${s.id}" title="Continue: start the timer with this" aria-label="Continue">▶</button><button type="button" class="danger" data-delentry="${s.id}" title="Delete" aria-label="Delete">✕</button></div>
+    </div>`;
+  };
+  function vLog() {
+    const byDay = {};
+    for (const s of sessions.slice().sort((a, b) => b.started_at.localeCompare(a.started_at))) (byDay[sday(s)] ||= []).push(s);
+    const days = Object.keys(byDay).sort().reverse();
+    if (!days.length) return '<div class="empty-state"><b>No time tracked yet</b><span class="meta">Start the timer above, or add time manually.</span></div>';
+    return days.slice(0, logDays).map(d => `<div class="log-day"><p class="grp">${dayName(d)} <span>${dur(sumMin(byDay[d]))}</span></p>${byDay[d].map(entryRow).join('')}</div>`).join('')
+      + (days.length > logDays ? '<button type="button" class="btn btn-sm ghost more-days" data-moredays>Show older days</button>' : '');
+  }
+  function vSheet() {
+    const s0 = startOfWeek(sheetAnchor), days = Array.from({ length: 7 }, (_, k) => ymd(addDays(s0, k))), t = todayStr(), g = GOAL();
+    const rows = {};
+    for (const s of sessions) { const k = days.indexOf(sday(s)); if (k >= 0) (rows[projOf(s)] ||= Array(7).fill(0))[k] += s.minutes; }
+    const names = Object.keys(rows).sort((a, b) => rows[b].reduce((x, y) => x + y) - rows[a].reduce((x, y) => x + y));
+    const colSum = k => names.reduce((a, n) => a + rows[n][k], 0), all = days.reduce((a, _, k) => a + colSum(k), 0);
+    const e = addDays(s0, 6);
+    return `<div class="sheet-nav"><button type="button" class="btn btn-sm ghost" data-sheet="-1" aria-label="Previous week">‹</button><button type="button" class="btn btn-sm ghost" data-sheet="0">This week</button><button type="button" class="btn btn-sm ghost" data-sheet="1" aria-label="Next week">›</button>
+        <b>${fmt(s0, { month: 'short', day: 'numeric' })} – ${fmt(e, { month: 'short', day: 'numeric' })}</b><span class="meta">${dur(all)} of ${g.week}h goal</span></div>
+      <div class="sheet-wrap"><table class="sheet">
+        <thead><tr><th>Project</th>${days.map(d => `<th class="${d === t ? 'is-today' : ''}">${fmt(parseYmd(d), { weekday: 'short' })}<small>${parseYmd(d).getDate()}</small></th>`).join('')}<th>Total</th></tr></thead>
+        <tbody>${names.length ? names.map(n => `<tr><td>${esc(n)}</td>${rows[n].map((m, k) => `<td class="${days[k] === t ? 'is-today' : ''}">${hmm(m)}</td>`).join('')}<td><b>${hmm(rows[n].reduce((a, b) => a + b))}</b></td></tr>`).join('')
+          : `<tr><td colspan="9" class="meta">Nothing tracked this week.</td></tr>`}</tbody>
+        <tfoot><tr><td>Total</td>${days.map((d, k) => { const m = colSum(k); return `<td class="${d === t ? 'is-today' : ''}${m >= g.day * 60 ? ' met' : ''}" title="${m >= g.day * 60 ? 'Daily goal met' : ''}">${hmm(m) || '–'}</td>`; }).join('')}<td><b>${hmm(all) || '0:00'}</b></td></tr></tfoot>
+      </table></div>`;
+  }
+  function exportCsv() {
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = ['date,start,end,minutes,hours,description,project,task,source'];
+    for (const s of sessions.slice().sort((a, b) => a.started_at.localeCompare(b.started_at))) {
+      const a = new Date(s.started_at), b = new Date(s.ended_at);
+      lines.push([ymd(a), hm(a), hm(b), s.minutes, (s.minutes / 60).toFixed(2), q(s.label), q(s.project), q(byId(s.task_id)?.title), s.source || 'timer'].join(','));
+    }
+    const url = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+    Object.assign(document.createElement('a'), { href: url, download: `time-entries-${todayStr()}.csv` }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    toast(`Exported ${sessions.length} entries (last 150 days)`);
+  }
+
+  // manual entry / edit dialog
+  const edlg = $('#entry-dialog'), ef = $('#entry-form');
+  function openEntry(s = null) {
+    ef.reset();
+    const now = new Date(), q = 15 * 6e4, end = s ? new Date(s.ended_at) : new Date(Math.floor(+now / q) * q), start = s ? new Date(s.started_at) : new Date(+end - 36e5);
+    ef.elements.id.value = s?.id || '';
+    ef.elements.label.value = s?.label || '';
+    ef.elements.project.value = s?.project || '';
+    ef.elements.project.closest('label').hidden = !hasTime;
+    ef.elements.task_id.innerHTML = '<option value="">No task</option>' + tasks.filter(x => x.kind === 'task' && (x.status !== 'done' || x.id === s?.task_id)).map(x => `<option value="${x.id}">${esc(x.title)}</option>`).join('');
+    ef.elements.task_id.value = s?.task_id || '';
+    ef.elements.date.value = ymd(start);
+    ef.elements.start.value = hm(start);
+    ef.elements.end.value = hm(end);
+    ef.elements.duration.value = dur(Math.round((end - start) / 6e4));
+    $('#entry-list').innerHTML = projects().map(p => `<option value="${esc(p)}">`).join('');
+    $('#entry-h').textContent = s ? 'Edit time entry' : 'Add time manually';
+    $('#entry-del').hidden = !s;
+    $('#entry-msg').textContent = '';
+    edlg.showModal();
+    if (!s) ef.elements.label.focus();
+  }
+  ef.addEventListener('input', e => {   // keep end and duration in step with each other
+    const f = ef.elements, st = f.start.value;
+    if (!st) return;
+    const base = new Date(`2000-01-01T${st}`);
+    if (e.target === f.duration) { const m = parseDur(f.duration.value); if (m > 0) f.end.value = hm(new Date(+base + m * 6e4)); }
+    else if ((e.target === f.end || e.target === f.start) && f.end.value) { let m = (new Date(`2000-01-01T${f.end.value}`) - base) / 6e4; if (m <= 0) m += 1440; f.duration.value = dur(m); }
+  });
+  ef.addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = ef.elements, id = f.id.value, msg = $('#entry-msg');
+    const start = new Date(`${f.date.value}T${f.start.value}`);
+    let end = f.end.value ? new Date(`${f.date.value}T${f.end.value}`) : null;
+    if (end && end <= start) end = addDays(end, 1);   // e.g. 23:00 – 01:00
+    if (!end) { const m = parseDur(f.duration.value); if (!(m > 0)) { msg.textContent = 'Give an end time or a duration like 1h 30m.'; return; } end = new Date(+start + m * 6e4); }
+    const minutes = Math.round((end - start) / 6e4);
+    if (minutes < 1 || minutes > 1440) { msg.textContent = 'An entry must be between 1 minute and 24 hours.'; return; }
+    const row = { label: f.label.value.trim() || null, task_id: f.task_id.value || null, started_at: start.toISOString(), ended_at: end.toISOString(), minutes };
+    if (hasTime) { row.project = f.project.value.trim() || null; if (!id) row.source = 'manual'; }
+    const { data, error } = await (id ? sb.from('focus_sessions').update(row).eq('id', id) : sb.from('focus_sessions').insert(row)).select().single();
+    if (error) { msg.textContent = error.message; return; }
+    if (id) Object.assign(sessions.find(s => s.id === id), data); else sessions.push(data);
+    edlg.close(); toast(id ? 'Entry saved' : `Added ${dur(minutes)}`); render();
+  });
+  $('#entry-del').addEventListener('click', async () => {
+    const id = ef.elements.id.value;
+    if (!id || !confirm('Delete this time entry?')) return;
+    const { error } = await sb.from('focus_sessions').delete().eq('id', id);
+    if (error) { $('#entry-msg').textContent = error.message; return; }
+    sessions = sessions.filter(s => s.id !== id); edlg.close(); toast('Entry deleted'); render();
+  });
 
   // ───────── analytics
   function streak() {
-    const active = new Set([...tasks.filter(x => x.done_at).map(x => ymd(new Date(x.done_at))), ...sessions.map(s => ymd(new Date(s.started_at)))]);
+    const active = new Set([...tasks.filter(x => x.done_at).map(x => ymd(new Date(x.done_at))), ...sessions.map(sday)]);
     let n = 0, d = dayStart(new Date());
     if (!active.has(ymd(d))) d = addDays(d, -1);   // a quiet morning doesn't break yesterday's streak
     while (active.has(ymd(d))) { n++; d = addDays(d, -1); }
     return n;
   }
-  function barChart(rows, unit) {   // single series, one hue, rounded data-ends on the baseline, hover tips
-    const W = 680, Hh = 170, L = 34, B = 24, T0 = 10, max = Math.max(1, ...rows.map(r => r.v));
-    const step = [1, 2, 5, 10, 15, 20, 30, 60, 120, 240].find(s => max / s <= 4) || Math.ceil(max / 4), top = Math.ceil(max / step) * step;
+  const num = v => String(+(+v).toFixed(2));
+  // single series, one hue, rounded data-ends on the baseline, hover tips, optional dashed goal line
+  function barChart(rows, unit, goal = 0, W = 680) {
+    const Hh = 170, L = 34, B = 24, T0 = 14, max = Math.max(goal * 1.1, ...rows.map(r => r.v), unit === ' h' ? 1 : 4);
+    const step = [.25, .5, 1, 2, 5, 10, 15, 20, 30, 60, 120, 240].find(s => max / s <= 4) || Math.ceil(max / 4), top = Math.ceil(max / step) * step;
     const y = v => T0 + (Hh - T0 - B) * (1 - v / top), bw = (W - L) / rows.length, w = Math.max(2, Math.min(26, bw * .62));
     const every = Math.ceil(rows.length / 10);
-    const grid = Array.from({ length: Math.round(top / step) + 1 }, (_, k) => k * step).map(v => `<line x1="${L}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join('');
+    const grid = Array.from({ length: Math.round(top / step) + 1 }, (_, k) => k * step).map(v => `<line x1="${L}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${num(v)}</text>`).join('');
     const bars = rows.map((r, k) => {
       const x = L + bw * k + (bw - w) / 2, y0 = y(0), y1 = y(r.v), rr = Math.min(4, w / 2, y0 - y1);
       const path = r.v > 0 ? `<path d="M${x},${y0}V${y1 + rr}Q${x},${y1} ${x + rr},${y1}H${x + w - rr}Q${x + w},${y1} ${x + w},${y1 + rr}V${y0}Z"/>` : '';
-      return `<g class="bar" data-tip="${esc(r.tip)}: ${r.v}${unit}">${path}<rect class="hit" x="${L + bw * k}" y="${T0}" width="${bw}" height="${Hh - T0 - B}"/>${k % every === 0 ? `<text x="${x + w / 2}" y="${Hh - 6}" text-anchor="middle">${esc(r.label)}</text>` : ''}</g>`;
+      return `<g class="bar" data-tip="${esc(r.tip)}: ${num(r.v)}${unit}">${path}<rect class="hit" x="${L + bw * k}" y="${T0}" width="${bw}" height="${Hh - T0 - B}"/>${k % every === 0 ? `<text x="${x + w / 2}" y="${Hh - 6}" text-anchor="middle">${esc(r.label)}</text>` : ''}</g>`;
     }).join('');
-    return `<div class="chart"><svg viewBox="0 0 ${W} ${Hh}" role="img"><g class="grid">${grid}</g><line class="base" x1="${L}" x2="${W}" y1="${y(0)}" y2="${y(0)}"/>${bars}</svg><div class="tip" hidden></div></div>`;
+    const goalLine = goal ? `<line class="goal-line" x1="${L}" x2="${W}" y1="${y(goal)}" y2="${y(goal)}"/><text class="goal-lbl" x="${W}" y="${y(goal) - 5}" text-anchor="end">goal ${num(goal)}${unit.trim()}</text>` : '';
+    return `<div class="chart"><svg viewBox="0 0 ${W} ${Hh}" role="img"><g class="grid">${grid}</g><line class="base" x1="${L}" x2="${W}" y1="${y(0)}" y2="${y(0)}"/>${bars}${goalLine}</svg><div class="tip" hidden></div></div>`;
+  }
+  // last 12 weeks, one square per day; sequential single-hue ramp (more time = deeper accent)
+  function heatmap() {
+    const weeks = 20, s0 = addDays(startOfWeek(new Date()), -7 * (weeks - 1)), t = todayStr(), per = {};
+    for (const s of sessions) per[sday(s)] = (per[sday(s)] || 0) + s.minutes;
+    const lvl = m => !m ? 0 : m < 60 ? 1 : m < 120 ? 2 : m < 240 ? 3 : 4;
+    let cells = '';
+    for (let k = 0; k < weeks * 7; k++) {
+      const d = ymd(addDays(s0, k)), m = per[d] || 0;
+      cells += d > t ? '<i class="fut"></i>' : `<i class="l${lvl(m)}" data-tip="${fmt(parseYmd(d), { weekday: 'short', month: 'short', day: 'numeric' })}: ${m ? dur(m) : 'nothing'}"></i>`;
+    }
+    const months = Array.from({ length: weeks }, (_, w) => { const d = addDays(s0, 7 * w); return d.getDate() <= 7 ? `<span style="grid-column:${w + 1}">${fmt(d, { month: 'short' })}</span>` : ''; }).join('');
+    return `<div class="chart heat-wrap"><div class="heat-days"><span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span><span></span></div>
+      <div><div class="heat-months">${months}</div><div class="heat">${cells}</div></div><div class="tip" hidden></div></div>
+      <p class="heat-legend">Less <i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> More <span>· under 1h, 1–2h, 2–4h, 4h+</span></p>`;
   }
   function vStats() {
-    const days = Array.from({ length: statRange }, (_, k) => ymd(addDays(new Date(), k - statRange + 1)));
+    const g = GOAL(), days = Array.from({ length: statRange }, (_, k) => ymd(addDays(new Date(), k - statRange + 1)));
     const from = days[0];
     const done = tasks.filter(x => x.done_at && ymd(new Date(x.done_at)) >= from);
-    const sess = sessions.filter(s => ymd(new Date(s.started_at)) >= from);
-    const focusMin = sess.reduce((a, s) => a + s.minutes, 0);
+    const sess = sessions.filter(s => sday(s) >= from);
+    const total = sumMin(sess), activeDays = new Set(sess.map(sday)).size;
     const dated = done.filter(x => x.due_date);
     const onTime = dated.length ? Math.round(100 * dated.filter(x => ymd(new Date(x.done_at)) <= x.due_date).length / dated.length) : null;
     const label = d => statRange <= 7 ? fmt(parseYmd(d), { weekday: 'short' }) : `${parseYmd(d).getMonth() + 1}/${parseYmd(d).getDate()}`;
     const perDay = fn => days.map(d => ({ label: label(d), tip: fmt(parseYmd(d), { weekday: 'short', month: 'short', day: 'numeric' }), v: fn(d) }));
     const doneRows = perDay(d => done.filter(x => ymd(new Date(x.done_at)) === d).length);
-    const focusRows = perDay(d => sess.filter(s => ymd(new Date(s.started_at)) === d).reduce((a, s) => a + s.minutes, 0));
-    const byTag = {};
-    for (const s of sess) { const t = byId(s.task_id); for (const g of (t && t.tags.length ? t.tags : ['untagged'])) byTag[g] = (byTag[g] || 0) + s.minutes; }
-    const tagRows = Object.entries(byTag).sort((a, b) => b[1] - a[1]).slice(0, 8), tagMax = Math.max(1, ...tagRows.map(r => r[1]));
+    const minDay = d => sumMin(sess.filter(s => sday(s) === d));
+    const hourRows = perDay(d => +(minDay(d) / 60).toFixed(1));
+    const goalDays = days.filter(d => minDay(d) >= g.day * 60).length;
+    // when you work: minutes split into the clock hours they actually covered
+    const byHour = Array(24).fill(0);
+    for (const s of sess) for (let a = +new Date(s.started_at), b = +new Date(s.ended_at); a < b;) { const h = new Date(a), next = Math.min(b, +new Date(h.getFullYear(), h.getMonth(), h.getDate(), h.getHours() + 1)); byHour[h.getHours()] += (next - a) / 6e4; a = next; }
+    const hourOfDay = byHour.map((m, h) => ({ label: `${h}`, tip: `${pad(h)}:00–${pad((h + 1) % 24)}:00`, v: +(m / 60).toFixed(1) }));
+    // last 8 weeks
+    const w0 = startOfWeek(new Date());
+    const weekRows = Array.from({ length: 8 }, (_, k) => { const s = addDays(w0, -7 * (7 - k)), e = ymd(addDays(s, 6)); return { label: `${s.getMonth() + 1}/${s.getDate()}`, tip: `Week of ${fmt(s, { month: 'short', day: 'numeric' })}`, v: +(sumMin(sessions.filter(x => sday(x) >= ymd(s) && sday(x) <= e)) / 60).toFixed(1) }; });
+    const byP = {};
+    for (const s of sess) byP[projOf(s)] = (byP[projOf(s)] || 0) + s.minutes;
+    const pRows = Object.entries(byP).sort((a, b) => b[1] - a[1]).slice(0, 8), pMax = Math.max(1, ...pRows.map(r => r[1]));
     return `<div class="toolbar"><div class="chips">${[7, 30, 90].map(n => `<button type="button" data-range="${n}" aria-pressed="${statRange === n}">Last ${n} days</button>`).join('')}</div></div>
       <div class="stats-row pl-stats">
-        ${tile('Tasks done', done.length, `${(done.length / statRange).toFixed(1)} per day`)}
-        ${tile('Focus time', dur(focusMin), `${dur(Math.round(focusMin / statRange))} per day on average`)}
-        ${tile('On time', onTime === null ? '–' : `${onTime}%`, 'of dated tasks done by their due date')}
+        ${tile('Hours tracked', dur(total), `${dur(Math.round(total / Math.max(1, activeDays)))} per working day`)}
+        ${tile('Daily goal met', `${goalDays}/${statRange}`, `days with ${g.day}h or more`)}
+        ${tile('Tasks done', done.length, onTime === null ? `${(done.length / statRange).toFixed(1)} per day` : `${onTime}% on time`)}
         ${tile('Streak', `${streak()}d`, `${tasks.filter(isOverdue).length} overdue now`)}
       </div>
       <div class="pl-charts">
+        <section class="pl-card wide"><h3>Hours per day</h3>${barChart(hourRows, ' h', g.day, 1240)}</section>
+        <section class="pl-card"><h3>Activity · last 20 weeks</h3>${heatmap()}</section>
+        <section class="pl-card"><h3>Time by project</h3>${pRows.length ? pRows.map(([n, m]) => `<div class="hbar"><span>${esc(n)}</span><i style="--w:${(100 * m / pMax).toFixed(1)}%"></i><b>${dur(m)} · ${Math.round(100 * m / total)}%</b></div>`).join('') : '<p class="meta">Track time with a project to see the split.</p>'}</section>
+        <section class="pl-card"><h3>When you work</h3>${barChart(hourOfDay, ' h')}</section>
+        <section class="pl-card"><h3>Weekly hours · last 8 weeks</h3>${barChart(weekRows, ' h', g.week)}</section>
         <section class="pl-card"><h3>Tasks completed per day</h3>${barChart(doneRows, '')}</section>
-        <section class="pl-card"><h3>Focus minutes per day</h3>${barChart(focusRows, ' min')}</section>
-        <section class="pl-card"><h3>Focus by tag</h3>${tagRows.length ? tagRows.map(([g, m]) => `<div class="hbar"><span>#${esc(g)}</span><i style="--w:${(100 * m / tagMax).toFixed(1)}%"></i><b>${dur(m)}</b></div>`).join('') : '<p class="meta">Pick a tagged task in the focus timer to see where your time goes.</p>'}</section>
-        <section class="pl-card"><h3>As a table</h3><details><summary class="meta">Show daily numbers</summary><table class="dtable"><thead><tr><th>Day</th><th>Tasks done</th><th>Focus</th></tr></thead><tbody>
-          ${days.map((d, k) => [d, k]).reverse().map(([d, k]) => `<tr><td>${fmt(parseYmd(d), { weekday: 'short', month: 'short', day: 'numeric' })}</td><td>${doneRows[k].v}</td><td>${dur(focusRows[k].v)}</td></tr>`).join('')}
+        <section class="pl-card"><h3>As a table</h3><details><summary class="meta">Show daily numbers</summary><table class="dtable"><thead><tr><th>Day</th><th>Hours</th><th>Tasks done</th></tr></thead><tbody>
+          ${days.map((d, k) => [d, k]).reverse().map(([d, k]) => `<tr><td>${fmt(parseYmd(d), { weekday: 'short', month: 'short', day: 'numeric' })}</td><td>${dur(minDay(d))}</td><td>${doneRows[k].v}</td></tr>`).join('')}
         </tbody></table></details></section>
       </div>`;
   }
@@ -647,7 +823,7 @@
       if (d.new) return openTask({}, { kind: d.new, day: d.day });
       if (d.cal) {
         const a = cal.anchor, k = d.cal === 'prev' ? -1 : 1;
-        cal.anchor = d.cal === 'today' ? new Date() : cal.mode === 'month' ? new Date(a.getFullYear(), a.getMonth() + k, 1) : addDays(a, cal.mode === 'week' ? 7 * k : k);
+        cal.anchor = d.cal === 'today' ? new Date() : cal.mode === 'month' ? new Date(a.getFullYear(), a.getMonth() + k, 1) : addDays(a, cal.mode === 'week' ? weekDays() * k : k);
         return render();
       }
       if (d.calmode) { cal.mode = d.calmode; store.set('pl-cal', cal.mode); return render(); }
@@ -655,6 +831,25 @@
       if (d.tf) { taskFilter = d.tf; return render(); }
       if (d.range) { statRange = +d.range; return render(); }
       if (d.focus) { T.taskId = d.focus; T.label = ''; saveT(); go('focus'); if (!T.running) timer.start(); return; }
+      // time tracking
+      if ('addentry' in d) return openEntry();
+      if (d.editentry) return openEntry(sessions.find(s => s.id === d.editentry));
+      if (d.cont) {
+        const s = sessions.find(x => x.id === d.cont);
+        if (T.running) await timer.finish();
+        Object.assign(T, { mode: 'watch', label: s.label || '', project: s.project || '', taskId: s.task_id || null });
+        return timer.start();
+      }
+      if (d.delentry) {
+        if (!confirm('Delete this time entry?')) return;
+        const { error } = await sb.from('focus_sessions').delete().eq('id', d.delentry);
+        if (error) return toast(error.message);
+        sessions = sessions.filter(s => s.id !== d.delentry); toast('Entry deleted'); return render();
+      }
+      if (d.timemode) { timeMode = d.timemode; store.set('pl-time', timeMode); return render(); }
+      if (d.sheet !== undefined) { sheetAnchor = +d.sheet ? addDays(sheetAnchor, 7 * +d.sheet) : new Date(); return render(); }
+      if ('moredays' in d) { logDays += 14; return render(); }
+      if ('export' in d) return exportCsv();
       if (d.timer) return timer[d.timer]();
       if (d.tmodeset) { if (T.running) return; T.mode = d.tmodeset; return timer.reset(); }
       if (d.note) { noteId = d.note; return render(); }
@@ -683,7 +878,8 @@
       const d = e.target.dataset;
       if (d.done) return setStatus(d.done, e.target.checked ? 'done' : 'todo');
       if ('ttag' in d) { taskTag = e.target.value; return render(); }
-      if ('ttask' in d) { T.taskId = e.target.value || null; T.label = ''; return saveT(); }
+      if ('ttask' in d) { T.taskId = e.target.value || null; if (!T.label.trim()) T.label = ''; return saveT(); }
+      if (d.goal) { const g = store.get('pl-goal', {}); g[d.goal] = Math.max(.5, +e.target.value || 1); store.set('pl-goal', g); return render(); }
       if (d.cfg) {
         const c = store.get('pl-timer-cfg', {}); c[d.cfg] = Math.max(1, +e.target.value || 1); store.set('pl-timer-cfg', c);
         if (!T.running) { T.remaining = null; saveT(); }
@@ -692,6 +888,8 @@
     });
     r.addEventListener('input', e => {
       const d = e.target.dataset;
+      if ('tdesc' in d) { T.label = e.target.value; saveT(); return; }      // the running timer picks these up when it stops
+      if ('tproj' in d) { T.project = e.target.value; saveT(); return; }
       if ('tq' in d) { taskQ = e.target.value.trim().toLowerCase(); render(); return keepFocus('[data-tq]'); }
       if ('nq' in d) { noteQ = e.target.value; render(); return keepFocus('[data-nq]'); }
       if (d.nf) {
@@ -729,9 +927,9 @@
     });
     // chart hover tips
     r.addEventListener('mousemove', e => {
-      const g = e.target.closest?.('.bar'), chart = e.target.closest?.('.chart');
+      const g = e.target.closest?.('.chart [data-tip]'), chart = e.target.closest?.('.chart');
       $$('.chart .tip', r).forEach(t => { if (!g || !chart || !chart.contains(t)) t.hidden = true; });
-      $$('.bar.hl', r).forEach(b => { if (b !== g) b.classList.remove('hl'); });
+      $$('.chart .hl', r).forEach(b => { if (b !== g) b.classList.remove('hl'); });
       if (!g || !chart) return;
       const tip = chart.querySelector('.tip'), box = chart.getBoundingClientRect();
       g.classList.add('hl'); tip.hidden = false; tip.textContent = g.dataset.tip;
@@ -746,6 +944,8 @@
       if (k >= 0 && e.key) go(Object.keys(VIEWS)[k]);
     });
     setInterval(tick, 500);
+    let wasNarrow = weekDays() === 3;   // re-lay the calendar when crossing the phone/desktop width
+    addEventListener('resize', () => { const n = weekDays() === 3; if (n !== wasNarrow) { wasNarrow = n; if (view === 'calendar') render(); } });
     setInterval(() => { if ($('.now') && !dlg.open && !document.activeElement?.matches('input, textarea')) render(); }, 6e4);   // move the "now" line
   }
 
