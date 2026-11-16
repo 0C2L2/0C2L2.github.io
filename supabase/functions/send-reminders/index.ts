@@ -73,7 +73,8 @@ const before = m => m >= 1440 ? `${m / 1440} day${m === 1440 ? '' : 's'}` : m >=
 async function sendAll(subs, data) {
   let sent = 0;
   for (const s of subs) {
-    const r = await sendPush(s, data, VAPID);
+    // private devices (e.g. a university PC) get no task details on the lock screen / notification centre
+    const r = await sendPush(s, s.private && data.tag !== 'test' ? { ...data, title: 'Planner', body: 'You have a reminder' } : data, VAPID);
     if (r.status === 404 || r.status === 410) await db(`push_subs?endpoint=eq.${encodeURIComponent(s.endpoint)}`, 'DELETE');   // device unsubscribed
     else if (r.ok) sent++;
     else console.error('push failed', r.status, await r.text());
@@ -87,7 +88,7 @@ const json = (o, status = 200) => new Response(JSON.stringify(o), { status, head
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   try {
-    const subs = await db('push_subs?select=endpoint,p256dh,auth');
+    const subs = await db('push_subs?select=endpoint,p256dh,auth,private');
     if (new URL(req.url).searchParams.has('test')) {   // "Send a test" from the planner: signed-in owner only
       const r = await fetch(`${BASE}/rest/v1/rpc/is_admin`, { method: 'POST', body: '{}', headers: { apikey: ANON, Authorization: req.headers.get('Authorization') || '', 'Content-Type': 'application/json' } });
       if (!r.ok || (await r.json()) !== true) return json({ error: 'owner only' }, 403);

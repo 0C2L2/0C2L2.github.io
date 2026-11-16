@@ -999,6 +999,35 @@ body.cv-sheet { background: #fff; margin: 0; }
 .ev[draggable="true"] { cursor: grab; }
 .ev.dragging { opacity: .4; }
 .mc.over, .tg-all > div.over { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+/* reminder devices */
+.devices { display: grid; gap: 6px; }
+.dev { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg2); }
+.dev > div { display: grid; gap: 2px; min-width: 0; color: var(--fg); }
+.dev em { font: 11px var(--mono); font-style: normal; color: var(--accent); }
+.dev .meta { margin: 0; font-size: 12px; }
+.op-form .dev-priv { display: flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap; }
+.op-form .dev-priv input { width: auto; }
+
+/* privacy mode (Shift+P): private content stays blurred until hovered, focused or typed in */
+html.privacy :is(
+  .t-main, .kcard, .ev, .blk, .note-item, .note-ed input, .note-ed textarea, .note-prev, .sess b, .dl-row span, .hbar span, .t-task select,
+  .op h3, .op-sum, .op .meta, .op-row .op-main, .file-card .file-info, .code-pill, .prof-row > div:first-child, #who, #email,
+  #detail .sub-h1, #detail .lead, #detail .big-sum, #detail .prose, #kit .mail-form input, #kit .mail-form textarea, #kit .cv-page, #kit .pick-row label, #kit .file-info,
+  .op-form input, .op-form textarea, .op-form select, .devices b
+) { filter: blur(7px); transition: filter .15s; }
+html.privacy :is(
+  .t-main, .kcard, .ev, .blk, .note-item, .note-ed input, .note-ed textarea, .note-prev, .sess b, .dl-row span, .hbar span, .t-task select,
+  .op h3, .op-sum, .op .meta, .op-row .op-main, .file-card .file-info, .code-pill, .prof-row > div:first-child, #who, #email,
+  #detail .sub-h1, #detail .lead, #detail .big-sum, #detail .prose, #kit .mail-form input, #kit .mail-form textarea, #kit .cv-page, #kit .pick-row label, #kit .file-info,
+  .op-form input, .op-form textarea, .op-form select, .devices b
+):is(:hover, :focus, :focus-within) { filter: none; }
+html.privacy body::after {
+  content: "Privacy mode on · Shift+P"; position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 60; pointer-events: none;
+  font: 500 12px var(--mono); padding: 6px 12px; border-radius: 999px; background: var(--fg); color: var(--bg); opacity: .85;
+}
+.privacy-btn[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+@media print { html.privacy :is(*) { filter: none !important; } html.privacy body::after { display: none; } }
 .op-form .del-btn:hover { color: #ff5f57; border-color: rgb(255 95 87 / .5); }
 
 @media (max-width: 960px) {

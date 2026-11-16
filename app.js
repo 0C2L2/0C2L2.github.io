@@ -199,7 +199,25 @@
       $('#pw-msg').textContent = error ? error.message : 'Password updated.';
       if (!error) $('#new-password').value = '';
     });
-    $('#logout').addEventListener('click', async () => { await sb.auth.signOut(); render(null); });
+    // signing out leaves nothing behind on this computer: reminders off here, planner state cleared
+    const cleanup = async () => {
+      try {
+        const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+        const sub = reg && await reg.pushManager.getSubscription();
+        if (sub) { await sb.from('push_subs').delete().eq('endpoint', sub.endpoint); await sub.unsubscribe(); }
+        if (reg) await reg.unregister();
+      } catch (e) {}
+      try { Object.keys(localStorage).filter(k => k.startsWith('pl-')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+    };
+    $('#logout').addEventListener('click', async () => { await cleanup(); await sb.auth.signOut(); render(null); });
+    // forgot to sign out on a university PC? this revokes every saved sign-in, everywhere
+    $('#logout-all').addEventListener('click', async () => {
+      if (!confirm('Sign out on every computer and phone, including this one?\nOther devices are locked out within an hour at the latest.')) return;
+      await cleanup();
+      const { error } = await sb.auth.signOut({ scope: 'global' });
+      if (error) return alert(error.message);
+      render(null);
+    });
     document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
       document.querySelectorAll('[data-tab]').forEach(x => x.setAttribute('aria-pressed', x === b));
       document.querySelectorAll('.tab').forEach(t => { t.hidden = t.id !== b.dataset.tab; });

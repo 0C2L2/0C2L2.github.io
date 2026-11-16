@@ -13,8 +13,10 @@ create table if not exists public.push_subs (
   p256dh     text not null,
   auth       text not null,
   device     text,
+  private    boolean not null default true,   -- true: notifications say "You have a reminder" without the title (shared computers)
   created_at timestamptz not null default now()
 );
+alter table public.push_subs add column if not exists private boolean not null default true;
 alter table public.push_subs enable row level security;
 drop policy if exists "admin only" on public.push_subs;
 create policy "admin only" on public.push_subs for all to authenticated using (public.is_admin()) with check (public.is_admin());

@@ -9,11 +9,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=227391e5">
+  <link rel="stylesheet" href="style.css?v=d2d308ff">
   <script>
     document.documentElement.classList.add('js');
     try { var t = localStorage.getItem('theme'); if (t && t !== 'violet') document.documentElement.dataset.theme = t; } catch (e) {}
     try { var m = localStorage.getItem('mode'); if (m === 'light' || m === 'dark') document.documentElement.dataset.mode = m; } catch (e) {}
+    try { if (localStorage.getItem('privacy') === '1') document.documentElement.classList.add('privacy'); } catch (e) {}
   </script>
 </head>
 <body data-page="board">
@@ -57,7 +58,7 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="theme.js?v=227391e5"></script>
-<script src="app.js?v=227391e5"></script>
+<script src="theme.js?v=d2d308ff"></script>
+<script src="app.js?v=d2d308ff"></script>
 </body>
 </html>

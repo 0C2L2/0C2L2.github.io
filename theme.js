@@ -36,4 +36,17 @@
   try { signedIn = Object.keys(localStorage).some(k => /^sb-.+-auth-token$/.test(k)); } catch (e) {}
   if (signedIn) document.querySelectorAll('.nav-signin').forEach(a => { a.textContent = 'Dashboard'; });
   if (signedIn) document.querySelectorAll('.nav-planner').forEach(a => { a.hidden = false; });
+
+  // privacy mode (Shift+P, or any [data-privacy] button): blur private content until hovered, for classrooms and screen-sharing
+  const setPrivacy = on => {
+    root.classList.toggle('privacy', on);
+    try { localStorage.setItem('privacy', on ? '1' : '0'); } catch (e) {}
+    document.querySelectorAll('[data-privacy]').forEach(b => b.setAttribute('aria-pressed', on));
+  };
+  addEventListener('keydown', e => {
+    if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.key.toLowerCase() !== 'p' || e.target.closest('input, textarea, select, [contenteditable]')) return;
+    e.preventDefault(); setPrivacy(!root.classList.contains('privacy'));
+  });
+  document.addEventListener('click', e => { if (e.target.closest('[data-privacy]')) setPrivacy(!root.classList.contains('privacy')); });
+  setPrivacy(root.classList.contains('privacy'));
 })();

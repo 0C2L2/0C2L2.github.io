@@ -10,11 +10,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=227391e5">
+  <link rel="stylesheet" href="style.css?v=d2d308ff">
   <script>
     document.documentElement.classList.add('js');
     try { var t = localStorage.getItem('theme'); if (t && t !== 'violet') document.documentElement.dataset.theme = t; } catch (e) {}
     try { var m = localStorage.getItem('mode'); if (m === 'light' || m === 'dark') document.documentElement.dataset.mode = m; } catch (e) {}
+    try { if (localStorage.getItem('privacy') === '1') document.documentElement.classList.add('privacy'); } catch (e) {}
   </script>
 </head>
 <body data-page="admin" class="admin-page">
@@ -66,6 +67,9 @@
       <a class="side-link" href="planner.html">
         <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>
         Planner</a>
+      <button class="side-link" type="button" data-privacy aria-pressed="false" title="Blur private content until you hover (Shift+P)">
+        <svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+        Privacy mode</button>
       <a class="side-link" href="opportunities.html">
         <svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></svg>
         Public board</a>
@@ -83,6 +87,9 @@
         <button id="logout" class="side-link out" type="button">
           <svg viewBox="0 0 24 24"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/></svg>
           Sign out</button>
+        <button id="logout-all" class="side-link out" type="button" title="Ends every saved sign-in on every computer and phone">
+          <svg viewBox="0 0 24 24"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/><path d="M3 21L21 3"/></svg>
+          Sign out everywhere</button>
       </div>
     </aside>
 
@@ -178,7 +185,7 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="theme.js?v=227391e5"></script>
-<script src="app.js?v=227391e5"></script>
+<script src="theme.js?v=d2d308ff"></script>
+<script src="app.js?v=d2d308ff"></script>
 </body>
 </html>

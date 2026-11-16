@@ -762,6 +762,37 @@
       : sub ? 'On for this device. Set a reminder in any task or event.'
       : Notification.permission === 'denied' ? 'Notifications are blocked for this site. Allow them in the browser’s site settings.' : 'Off for this device.';
     $('#push-on').hidden = !ok || !!sub || !hasRemind; $('#push-off').hidden = !sub; $('#push-test').hidden = !sub;
+    $('#push-private').closest('label').hidden = !ok || !!sub || !hasRemind;
+    if (hasRemind) drawDevices(sub && sub.endpoint);
+  }
+  const deviceName = ua => {
+    const b = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+    const o = /iPhone|iPad/.test(ua) ? 'iPhone / iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : '';
+    return o ? `${b} on ${o}` : b;
+  };
+  // every device that gets reminders: hide titles per device, or remove one you no longer use (e.g. a uni PC)
+  async function drawDevices(mine) {
+    const box = $('#push-devices');
+    const { data, error } = await sb.from('push_subs').select('endpoint,device,private,created_at').order('created_at');
+    if (error) { box.innerHTML = `<p class="meta">${esc(error.message)}</p>`; return; }
+    box.innerHTML = data.length ? data.map((d, i) => `<div class="dev">
+        <div><b>${esc(deviceName(d.device || ''))}</b>${d.endpoint === mine ? '<em>this device</em>' : ''}<span class="meta">since ${fmt(new Date(d.created_at), { month: 'short', day: 'numeric', year: 'numeric' })}</span></div>
+        <label class="dev-priv" title="Notifications on that device say only “You have a reminder”"><input type="checkbox" data-devpriv="${i}"${d.private ? ' checked' : ''}> Hide titles</label>
+        <button type="button" class="btn btn-sm ghost" data-devrm="${i}">Remove</button></div>`).join('')
+      : '<p class="meta">No devices have reminders on.</p>';
+    box.onchange = async e => {
+      const i = e.target.dataset.devpriv;
+      if (i === undefined) return;
+      const { error: err } = await sb.from('push_subs').update({ private: e.target.checked }).eq('endpoint', data[i].endpoint);
+      toast(err ? err.message : e.target.checked ? 'Titles hidden on that device' : 'Titles shown on that device');
+    };
+    box.onclick = async e => {
+      const i = e.target.closest('[data-devrm]')?.dataset.devrm;
+      if (i === undefined) return;
+      if (data[i].endpoint === mine) return pushOff();
+      const { error: err } = await sb.from('push_subs').delete().eq('endpoint', data[i].endpoint);
+      toast(err ? err.message : 'Device removed; it gets no more reminders'); pushUi();
+    };
   }
   async function pushOn() {
     try {
@@ -770,7 +801,7 @@
       await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64bytes(VAPID_PUBLIC) });
       const j = sub.toJSON();
-      const { error } = await sb.from('push_subs').upsert({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, device: navigator.userAgent.slice(0, 160) });
+      const { error } = await sb.from('push_subs').upsert({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, device: navigator.userAgent.slice(0, 160), private: $('#push-private').checked });
       if (error) { await sub.unsubscribe(); throw error; }
       toast('Reminders on for this device');
     } catch (e) { toast(`Could not turn on reminders: ${e.message || e}`); }
