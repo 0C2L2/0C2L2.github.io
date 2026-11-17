@@ -794,8 +794,8 @@ body.cv-sheet { background: #fff; margin: 0; }
 
 /* ── planner (owner only) ── */
 .planner { display: grid; gap: 18px; }
-#pl-view { display: grid; gap: 14px; min-width: 0; }
-#pl-view > .toolbar, #pl-view > .cal-hint { margin: 0; }
+#pl-view, #rm-view { display: grid; gap: 14px; min-width: 0; }
+#pl-view > .toolbar, #pl-view > .cal-hint, #rm-view > .toolbar { margin: 0; }
 .pl-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
 .pl-top .sub-h1 { margin: 0; }
 .pl-top .kicker { margin-bottom: 8px; }

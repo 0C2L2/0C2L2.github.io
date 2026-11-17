@@ -3,7 +3,7 @@
 (() => {
   const A = window.App;
   if (!A || document.body.dataset.page !== 'planner') return;
-  const { sb, esc, md, toast } = A;
+  const { sb, esc, md, toast, barChart } = A;
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const store = {
@@ -71,7 +71,7 @@
     hasRemind = !(await sb.from('tasks').select('remind_min').limit(1)).error;
     hasTime = !(await sb.from('focus_sessions').select('project').limit(1)).error;
     const rp = await sb.from('roadmap_progress').select('*');
-    hasRm = !rp.error; prog = new Map((rp.data || []).map(p => [p.lesson_id, p]));
+    prog = new Map((rp.data || []).map(p => [p.lesson_id, p]));
     await loadBookings();
   }
 
@@ -367,7 +367,7 @@
   // ───────── time tracking: stopwatch / pomodoro tracker, manual entries, log, timesheet. Timer state survives reloads.
   const CFG = () => ({ focus: 25, short: 5, long: 15, every: 4, ...store.get('pl-timer-cfg', {}) });
   const GOAL = () => ({ day: 6, week: 30, ...store.get('pl-goal', {}) });   // hours
-  const T = { mode: 'watch', phase: 'focus', running: false, remaining: null, endsAt: null, startedAt: null, elapsed: 0, runSince: null, taskId: null, label: '', project: '', lesson: null, count: 0, ...store.get('pl-timer', {}) };
+  const T = { mode: 'watch', phase: 'focus', running: false, remaining: null, endsAt: null, startedAt: null, elapsed: 0, runSince: null, taskId: null, label: '', project: '', count: 0, ...store.get('pl-timer', {}) };
   const saveT = () => store.set('pl-timer', T);
   const phaseLen = () => CFG()[T.phase] * 6e4;
   const leftMs = () => T.mode === 'pomo' ? (T.running ? T.endsAt - Date.now() : (T.remaining ?? phaseLen())) : (T.elapsed + (T.running ? Date.now() - T.runSince : 0));
@@ -412,7 +412,7 @@
       if (T.mode === 'pomo') T.remaining = T.endsAt - Date.now(); else T.elapsed += Date.now() - T.runSince;
       T.running = false; saveT(); render();
     },
-    reset() { Object.assign(T, { phase: 'focus', running: false, remaining: null, endsAt: null, startedAt: null, elapsed: 0, runSince: null, lesson: null }); saveT(); render(); },
+    reset() { Object.assign(T, { phase: 'focus', running: false, remaining: null, endsAt: null, startedAt: null, elapsed: 0, runSince: null }); saveT(); render(); },
     async finish() {   // stopwatch: stop and save; pomodoro: end this block now (logs the focus so far)
       const end = Date.now();
       if (T.mode === 'watch') { const ms = leftMs(); if (T.startedAt) await logSession(end - ms, end); return timer.reset(); }
@@ -604,22 +604,6 @@
     while (active.has(ymd(d))) { n++; d = addDays(d, -1); }
     return n;
   }
-  const num = v => String(+(+v).toFixed(2));
-  // single series, one hue, rounded data-ends on the baseline, hover tips, optional dashed goal line
-  function barChart(rows, unit, goal = 0, W = 680) {
-    const Hh = 170, L = 34, B = 24, T0 = 14, max = Math.max(goal * 1.1, ...rows.map(r => r.v), unit === ' h' ? 1 : 4);
-    const step = [.25, .5, 1, 2, 5, 10, 15, 20, 30, 60, 120, 240].find(s => max / s <= 4) || Math.ceil(max / 4), top = Math.ceil(max / step) * step;
-    const y = v => T0 + (Hh - T0 - B) * (1 - v / top), bw = (W - L) / rows.length, w = Math.max(2, Math.min(26, bw * .62));
-    const every = Math.ceil(rows.length / 10);
-    const grid = Array.from({ length: Math.round(top / step) + 1 }, (_, k) => k * step).map(v => `<line x1="${L}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${num(v)}</text>`).join('');
-    const bars = rows.map((r, k) => {
-      const x = L + bw * k + (bw - w) / 2, y0 = y(0), y1 = y(r.v), rr = Math.min(4, w / 2, y0 - y1);
-      const path = r.v > 0 ? `<path d="M${x},${y0}V${y1 + rr}Q${x},${y1} ${x + rr},${y1}H${x + w - rr}Q${x + w},${y1} ${x + w},${y1 + rr}V${y0}Z"/>` : '';
-      return `<g class="bar" data-tip="${esc(r.tip)}: ${num(r.v)}${unit}">${path}<rect class="hit" x="${L + bw * k}" y="${T0}" width="${bw}" height="${Hh - T0 - B}"/>${k % every === 0 ? `<text x="${x + w / 2}" y="${Hh - 6}" text-anchor="middle">${esc(r.label)}</text>` : ''}</g>`;
-    }).join('');
-    const goalLine = goal ? `<line class="goal-line" x1="${L}" x2="${W}" y1="${y(goal)}" y2="${y(goal)}"/><text class="goal-lbl" x="${W}" y="${y(goal) - 5}" text-anchor="end">goal ${num(goal)}${unit.trim()}</text>` : '';
-    return `<div class="chart"><svg viewBox="0 0 ${W} ${Hh}" role="img"><g class="grid">${grid}</g><line class="base" x1="${L}" x2="${W}" y1="${y(0)}" y2="${y(0)}"/>${bars}${goalLine}</svg><div class="tip" hidden></div></div>`;
-  }
   // last 12 weeks, one square per day; sequential single-hue ramp (more time = deeper accent)
   function heatmap() {
     const weeks = 20, s0 = addDays(startOfWeek(new Date()), -7 * (weeks - 1)), t = todayStr(), per = {};
@@ -755,178 +739,25 @@
     bset = data; toast(row.enabled ? 'Saved · booking page is open' : 'Saved · booking page is closed'); render();
   }
 
-  // ───────── learning roadmap: every lesson has a date (roadmap.js, generated + link-checked); progress → roadmap_progress
-  // Strict: a day only counts for the streak when all of its lessons were done on (or before) that day; late work earns half XP.
-  const RM = window.ROADMAP || null, rmByDay = {}, rmById = {};
-  if (RM) for (const l of RM.lessons) { (rmByDay[l.d] ||= []).push(l); rmById[l.i] = l; }
-  let prog = new Map(), hasRm = false, rmDay = null, rmOpen = null, rmShown = 0, rmMode = store.get('pl-rm', 'path'), rmKind = 'paper', rmQ = '';
-  const KIND = { video: 'Video', paper: 'Paper', course: 'Course', read: 'Reading', practice: 'Practice', dsa: 'DSA', project: 'Project', review: 'Review' };
-  const TRACK = { ML: 'AI/ML core', Focus: 'Focus areas', FDE: 'Forward-deployed', Career: 'Interviews' };
-  const STATE = { perfect: 'Done on time', late: 'Done late', missed: 'Missed', today: 'Due today', locked: 'Upcoming' };
-  const LEVEL = 600;   // XP per level (≈ 5 study days)
-  const unitOf = n => RM.units[n - 1];
-  const doneOn = id => prog.has(id) ? ymd(new Date(prog.get(id).done_at)) : null;
-  const onTime = l => { const d = doneOn(l.i); return !!d && d <= l.d; };
-  const xpOf = l => !prog.has(l.i) ? 0 : onTime(l) ? l.m : Math.round(l.m / 2);
-  const rmMin = L => L.reduce((a, l) => a + l.m, 0);
-  const short = d => fmt(parseYmd(d), { month: 'short', day: 'numeric' });
-  function dayState(d) {
-    const L = rmByDay[d];
-    if (!L) return 'none';
-    if (L.every(onTime)) return 'perfect';
-    if (L.every(l => prog.has(l.i))) return 'late';
-    const t = todayStr();
-    return d < t ? 'missed' : d === t ? 'today' : 'locked';
-  }
-  function rmStreak() {
-    let d = dayStart(new Date()), n = 0;
-    if (dayState(ymd(d)) !== 'perfect') d = addDays(d, -1);   // today still open → count from yesterday
-    while (dayState(ymd(d)) === 'perfect') { n++; d = addDays(d, -1); }
-    return n;
-  }
-  const rmBehind = () => RM.lessons.filter(l => l.d < todayStr() && !prog.has(l.i));
+  // ───────── learning roadmap lives on its own page (/learn, learn.js); here each day just links to it
+  const RM = window.ROADMAP || null, rmByDay = {};
+  if (RM) for (const l of RM.lessons) (rmByDay[l.d] ||= []).push(l);
+  let prog = new Map();
   const rmChip = d => {
-    const L = rmByDay[d], n = L.filter(l => prog.has(l.i)).length, s = dayState(d);
-    return `<button type="button" class="ev ev-rm${s === 'perfect' || s === 'late' ? ' done' : s === 'missed' ? ' miss' : ''}" data-rmgo="${d}" title="Roadmap: ${L.length} lessons, ${dur(rmMin(L))}">◆ Learn ${n}/${L.length}</button>`;
+    const L = rmByDay[d], n = L.filter(l => prog.has(l.i)).length, miss = n < L.length && d < todayStr();
+    return `<a class="ev ev-rm${n === L.length ? ' done' : miss ? ' miss' : ''}" href="/learn?day=${d}" title="Learning roadmap: ${L.length} lessons">◆ Learn ${n}/${L.length}</a>`;
   };
-  function rmRow(l, withDate = false) {
-    const done = prog.has(l.i), late = !done && l.d < todayStr(), mine = T.lesson === l.i && (T.running || T.elapsed > 0);
-    return `<div class="rm-row${done ? ' done' : ''}${late ? ' late' : ''}">
-      <button type="button" class="rm-tick" data-rmdone="${l.i}" aria-pressed="${done}" aria-label="${done ? 'Mark not done' : 'Mark done'}: ${esc(l.t)}"${hasRm ? '' : ' disabled'}></button>
-      <div class="rm-main">
-        ${l.l ? `<a href="${esc(l.l)}" target="_blank" rel="noopener">${esc(l.t)}</a>` : `<b>${esc(l.t)}</b>`}
-        <span class="t-meta"><span class="rm-kind k-${l.k}">${KIND[l.k]}</span><span>${dur(l.m)}</span>${withDate || late ? `<span class="${late ? 'rm-due' : ''}">${relDay(l.d)}</span>` : ''}<span>U${l.u}</span>${done && !onTime(l) ? '<span>late · half XP</span>' : ''}</span>
-        ${done ? `<input class="rm-note" data-rmnote="${l.i}" value="${esc(prog.get(l.i).note || '')}" placeholder="One takeaway (optional)" aria-label="Takeaway" maxlength="2000" autocomplete="off">` : ''}
-      </div>
-      ${done ? `<span class="rm-xp">+${xpOf(l)} XP</span>` : `<button type="button" class="t-play${mine ? ' on' : ''}" data-rmtrack="${l.i}" title="${mine && T.running ? 'Pause' : 'Track time on this'}" aria-label="Track time: ${esc(l.t)}">${mine && T.running ? '❚❚' : '▶'}</button>`}
-    </div>`;
-  }
   function rmTodayCard() {
     if (!RM) return '';
-    const t = todayStr(), L = rmByDay[t] || [], behind = rmBehind();
-    if (t < RM.start) return `<section class="pl-card"><div class="card-h"><h3>Learning roadmap</h3><button type="button" class="btn btn-sm ghost" data-rmgo="${RM.start}">Preview day 1</button></div><p class="meta">Starts ${fmt(parseYmd(RM.start), { weekday: 'long', month: 'long', day: 'numeric' })}: 36 weeks, 2 hours a day, every lesson on a fixed date.</p></section>`;
-    if (!L.length && !behind.length) return '';
-    return `<section class="pl-card"><div class="card-h"><h3>Learning · today</h3><button type="button" class="btn btn-sm ghost" data-rmgo="${t}">Open path</button></div>
-      ${behind.length ? `<p class="grp rm-due">${behind.length} overdue · ${dur(rmMin(behind))}</p>` : ''}${L.map(l => rmRow(l)).join('')}</section>`;
-  }
-  function vLearn() {
-    if (!RM) return '<p class="notice">roadmap.js did not load. Reload the page.</p>';
-    const t = todayStr(), day = rmDay || (t < RM.start ? RM.start : t > RM.end ? RM.end : t);
-    const xp = RM.lessons.reduce((a, l) => a + xpOf(l), 0), lvl = Math.floor(xp / LEVEL) + 1, into = xp % LEVEL;
-    const L = rmByDay[t] || [], behind = rmBehind(), waitD = Math.round((parseYmd(RM.start) - dayStart(new Date())) / 864e5);
-    return `<div class="toolbar rm-bar"><div class="chips">${[['path', 'Path'], ['library', 'Library'], ['progress', 'Progress']].map(([m, l]) => `<button type="button" data-rmmode="${m}" aria-pressed="${rmMode === m}">${l}</button>`).join('')}</div>
-        <button type="button" class="btn btn-sm ghost" data-rmblock>+ Daily study block</button></div>
-      <div class="stats-row pl-stats">
-        ${tile('Streak', `${rmStreak()}d`, 'perfect days in a row')}
-        <div class="stat-tile"><span class="stat-k">Level ${lvl}</span><b>${xp.toLocaleString('en')} XP</b><span class="stat-s">${LEVEL - into} XP to level ${lvl + 1}</span><i class="goal-bar" style="--p:${(100 * into / LEVEL).toFixed(1)}%"></i></div>
-        ${waitD > 0 ? tile('Starts in', `${waitD}d`, fmt(parseYmd(RM.start), { weekday: 'short', month: 'short', day: 'numeric' })) : tile('Today', `${L.filter(l => prog.has(l.i)).length}/${L.length}`, `${dur(rmMin(L))} planned`)}
-        ${tile('Behind', behind.length, behind.length ? `${dur(rmMin(behind))} to catch up` : 'on schedule', behind.length ? 'hot' : '')}
-      </div>
-      ${hasRm ? '' : '<p class="notice">Run <code>supabase/roadmap.sql</code> once in Supabase → SQL Editor, then reload, to save progress.</p>'}
-      ${rmMode === 'library' ? rmLibrary() : rmMode === 'progress' ? rmProgress() : rmPath(day, behind)}`;
-  }
-  function rmPath(day, behind) {
-    const L = rmByDay[day], u = unitOf(L[0].u), st = dayState(day);
-    rmShown = rmOpen ?? u.n;
-    const late = behind.length ? `<section class="pl-card"><div class="card-h"><h3>Overdue · clear these first</h3><span class="rm-due">${behind.length}</span></div>
-      ${behind.slice(0, 6).map(l => rmRow(l, true)).join('')}${behind.length > 6 ? `<p class="meta">+ ${behind.length - 6} more on earlier days (red on the path).</p>` : ''}</section>` : '';
-    const card = `<section class="pl-card rm-day"><div class="card-h"><h3>${day === todayStr() ? 'Today' : fmt(parseYmd(day), { weekday: 'long', month: 'short', day: 'numeric' })} · Unit ${u.n}</h3><span class="rm-state s-${st}">${STATE[st]}</span></div>
-      <p class="meta">${esc(u.t)}: ${esc(u.g)}</p>${L.map(l => rmRow(l)).join('')}
-      <p class="meta rm-sum">${dur(rmMin(L))} planned · up to ${rmMin(L)} XP</p></section>`;
-    const units = RM.units.map(x => {
-      const ls = RM.lessons.filter(l => l.u === x.n), dn = ls.filter(l => prog.has(l.i)).length, open = x.n === rmShown;
-      const days = open ? Object.keys(rmByDay).filter(d => d >= x.s && d <= x.e) : [];
-      return `<section class="rm-unit${open ? ' open' : ''}${day >= x.s && day <= x.e ? ' cur' : ''}">
-        <button type="button" class="rm-uhead" data-rmunit="${x.n}" aria-expanded="${open}"><span class="rm-un">${x.n}</span><span class="rm-ut"><b>${esc(x.t)}</b><span class="t-meta"><span>${TRACK[x.tr]}</span><span>${short(x.s)} – ${short(x.e)}</span><span>${dn}/${ls.length}</span></span></span><i class="rm-ubar" style="--p:${(100 * dn / ls.length).toFixed(1)}%"></i></button>
-        ${open ? `<p class="meta rm-goal">${esc(x.g)} Project: <b>${esc(x.p)}</b>.</p><div class="rm-nodes">${days.map((d, k) => {
-          const s = dayState(d), dow = parseYmd(d).getDay();
-          return `<button type="button" class="rm-node s-${s}${d === day ? ' sel' : ''}" style="--x:${Math.round(Math.sin(k * .8) * 56)}px" data-rmday="${d}" aria-label="${fmt(parseYmd(d), { weekday: 'long', month: 'short', day: 'numeric' })}: ${STATE[s].toLowerCase()}" title="${fmt(parseYmd(d), { weekday: 'short', month: 'short', day: 'numeric' })} · ${STATE[s]}${dow === 6 || dow === 0 ? ' · project day' : ''}">${s === 'perfect' || s === 'late' ? '✓' : s === 'missed' ? '!' : dow === 6 ? '★' : parseYmd(d).getDate()}</button>`;
-        }).join('')}</div>` : ''}</section>`;
-    }).join('');
-    return `<div class="rm-wrap"><div class="pl-col">${card}${late}</div><div class="rm-path">${units}</div></div>`;
-  }
-  function rmLibrary() {
-    const q = rmQ.trim().toLowerCase(), study = ['video', 'paper', 'course', 'read'];
-    const list = RM.lessons.filter(l => (rmKind === 'all' ? study.includes(l.k) : l.k === rmKind) && (!q || l.t.toLowerCase().includes(q)));
-    return `<section class="pl-card"><div class="task-bar"><div class="chips">${[['paper', 'Papers'], ['video', 'Videos'], ['course', 'Courses'], ['read', 'Reading'], ['all', 'All']].map(([k, l]) => `<button type="button" data-rmkind="${k}" aria-pressed="${rmKind === k}">${l}</button>`).join('')}</div>
-        <input data-rmq value="${esc(rmQ)}" placeholder="Search the roadmap…" aria-label="Search the roadmap" autocomplete="off"></div>
-      <p class="meta">${list.filter(l => prog.has(l.i)).length} of ${list.length} done</p>
-      ${RM.units.map(u => { const ls = list.filter(l => l.u === u.n); return ls.length ? `<p class="grp">Unit ${u.n} · ${esc(u.t)}</p>${ls.map(l => rmRow(l, true)).join('')}` : ''; }).join('') || '<p class="meta">Nothing matches.</p>'}</section>`;
-  }
-  function rmProgress() {
-    const t = todayStr(), due = RM.lessons.filter(l => l.d <= t), done = RM.lessons.filter(l => prog.has(l.i));
-    const rs = sessions.filter(s => (s.project || '').startsWith('Roadmap · '));
-    const papers = RM.lessons.filter(l => l.k === 'paper'), w0 = parseYmd(RM.start);
-    const nw = Math.max(1, Math.min(36, Math.floor((dayStart(new Date()) - w0) / 6048e5) + 1));
-    const weekRows = Array.from({ length: nw }, (_, k) => {
-      const s = ymd(addDays(w0, 7 * k)), e = ymd(addDays(w0, 7 * k + 6)), ls = RM.lessons.filter(l => l.d >= s && l.d <= e);
-      return { label: `W${k + 1}`, tip: `Week ${k + 1} (${short(s)} – ${short(e)})`, v: ls.reduce((a, l) => a + xpOf(l), 0) };
-    });
-    const byU = RM.units.map(u => [u, sumMin(rs.filter(s => s.project === `Roadmap · U${u.n}`))]).filter(x => x[1]), uMax = Math.max(1, ...byU.map(x => x[1]));
-    const notes = done.filter(l => prog.get(l.i).note).sort((a, b) => prog.get(b.i).done_at.localeCompare(prog.get(a.i).done_at)).slice(0, 30);
-    return `<div class="stats-row pl-stats">
-        ${tile('Completed', `${Math.round(100 * done.length / RM.lessons.length)}%`, `${done.length} of ${RM.lessons.length} lessons`)}
-        ${tile('On time', due.length ? `${Math.round(100 * due.filter(onTime).length / due.length)}%` : '–', 'of lessons due so far')}
-        ${tile('Hours studied', dur(sumMin(rs)), 'tracked on roadmap lessons')}
-        ${tile('Papers read', `${papers.filter(l => prog.has(l.i)).length}/${papers.length}`, 'arXiv + classics')}
-      </div>
-      <div class="pl-charts">
-        <section class="pl-card wide"><h3>XP per week</h3>${barChart(weekRows, ' XP', Math.round(rmMin(RM.lessons) / 36), 1240)}</section>
-        <section class="pl-card"><h3>Time by unit</h3>${byU.length ? byU.map(([u, m]) => `<div class="hbar"><span>U${u.n} ${esc(u.t)}</span><i style="--w:${(100 * m / uMax).toFixed(1)}%"></i><b>${dur(m)}</b></div>`).join('') : '<p class="meta">Press ▶ on a lesson to track time against its unit.</p>'}</section>
-        <section class="pl-card"><h3>Progress by track</h3>${Object.entries(TRACK).map(([k, name]) => {
-          const ls = RM.lessons.filter(l => unitOf(l.u).tr === k), d = ls.filter(l => prog.has(l.i)).length;
-          return `<div class="hbar"><span>${name}</span><i style="--w:${(100 * d / ls.length).toFixed(1)}%"></i><b>${d}/${ls.length}</b></div>`;
-        }).join('')}</section>
-        <section class="pl-card wide"><h3>Takeaways</h3>${notes.length ? notes.map(l => `<div class="dl-row"><span>${esc(prog.get(l.i).note)}</span><b>${esc(l.t.slice(0, 44))}</b></div>`).join('') : '<p class="meta">Finished lessons get a one-line takeaway box. Your notes collect here.</p>'}</section>
-      </div>`;
-  }
-  async function rmToggle(id) {
-    const l = rmById[id];
-    if (prog.has(id)) {
-      const { error } = await sb.from('roadmap_progress').delete().eq('lesson_id', id);
-      if (error) return toast(error.message);
-      prog.delete(id); toast('Marked not done'); return render();
-    }
-    let note = '';
-    if (T.lesson === id && (T.running || T.elapsed > 0 || T.startedAt)) await timer.finish();   // logs the real time
-    else if (hasTime && !sessions.some(s => s.label === l.t && sday(s) === todayStr())) {        // nothing tracked → log the planned time
-      const end = new Date(), row = { label: l.t, project: `Roadmap · U${l.u}`, started_at: new Date(+end - l.m * 6e4).toISOString(), ended_at: end.toISOString(), minutes: l.m, source: 'manual' };
-      const { data, error } = await sb.from('focus_sessions').insert(row).select().single();
-      if (!error) { sessions.push(data); note = ` · logged ${dur(l.m)}`; }
-    }
-    const { data, error } = await sb.from('roadmap_progress').insert({ lesson_id: id }).select().single();
-    if (error) return toast(error.message);
-    prog.set(id, data);
-    const left = rmByDay[l.d].filter(x => !prog.has(x.i)).length, s = dayState(l.d);
-    toast(left ? `+${xpOf(l)} XP${note} · ${left} more to finish the day` : s === 'perfect' ? `Day complete · ${rmStreak()}-day streak${note}` : `+${xpOf(l)} XP · day complete (late)${note}`);
-    render();
-  }
-  async function rmTrack(id) {
-    const l = rmById[id];
-    if (T.lesson === id) return T.running ? timer.pause() : timer.start();
-    if (T.running || T.elapsed > 0 || T.startedAt) await timer.finish();
-    Object.assign(T, { mode: 'watch', label: l.t, project: `Roadmap · U${l.u}`, taskId: null, lesson: id });
-    timer.start();
-  }
-  async function rmNote(id, note) {
-    const { data, error } = await sb.from('roadmap_progress').update({ note: note || null }).eq('lesson_id', id).select().single();
-    if (error) return toast(error.message);
-    prog.set(id, data); toast('Takeaway saved');
-  }
-  async function rmBlock() {
-    if (tasks.some(t => t.kind === 'event' && (t.tags || []).includes('roadmap'))) return toast('Your study block is already in the calendar. Edit it there.');
-    const at = (prompt('Daily 2-hour study block. Start time (HH:MM):', '20:00') || '').trim();
-    if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(at)) return at && toast('Use a time like 20:00');
-    const first = todayStr() > RM.start ? todayStr() : RM.start, start = new Date(`${first}T${at.padStart(5, '0')}`), end = new Date(+start + 2 * 36e5);
-    const row = { kind: 'event', title: 'Study · roadmap', status: 'todo', priority: 2, start_at: start.toISOString(), end_at: end.toISOString(), repeat: 'daily', repeat_until: RM.end, tags: ['roadmap'], notes: 'The day’s lessons are in Planner → Learn.' };
-    if (hasRemind) { row.remind_min = 10; row.remind_at = remindAt(row); }
-    const { data, error } = await sb.from('tasks').insert(row).select().single();
-    if (error) return toast(error.message);
-    tasks.push(data); toast(`Added: every day ${at}–${hm(end)}${hasRemind ? ', reminder 10 min before' : ''}`); render();
+    const t = todayStr(), L = rmByDay[t] || [], behind = RM.lessons.filter(l => l.d < t && !prog.has(l.i)).length;
+    if (t < RM.start) return `<section class="pl-card"><div class="card-h"><h3>Learning roadmap</h3><a class="btn btn-sm ghost" href="/learn">Open Learn</a></div><p class="meta">Starts ${fmt(parseYmd(RM.start), { weekday: 'long', month: 'long', day: 'numeric' })}: 36 weeks, 2 hours a day.</p></section>`;
+    if (!L.length && !behind) return '';
+    return `<section class="pl-card"><div class="card-h"><h3>Learning · today</h3><a class="btn btn-sm ghost" href="/learn">Open Learn</a></div>
+      ${behind ? `<p class="grp rm-due">${behind} overdue</p>` : ''}${L.map(l => `<div class="dl-row"><span>${prog.has(l.i) ? '✓ ' : ''}${esc(l.t)}</span><b>${dur(l.m)}</b></div>`).join('')}</section>`;
   }
 
   // ───────── render + events
-  const VIEWS = { today: vToday, calendar: vCalendar, tasks: vTasks, notes: vNotes, focus: vFocus, stats: vStats, book: vBook, learn: vLearn };
+  const VIEWS = { today: vToday, calendar: vCalendar, tasks: vTasks, notes: vNotes, focus: vFocus, stats: vStats, book: vBook };
   function render() {
     if (!VIEWS[view]) view = 'today';
     $$('[data-v]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === view));
@@ -1070,15 +901,6 @@
       if (!el || el.tagName === 'A') return;
       const d = el.dataset;
       if (d.open) return openTask(byId(d.open));
-      // learning roadmap
-      if (d.rmgo) { rmDay = d.rmgo === todayStr() ? null : d.rmgo; rmOpen = null; rmMode = 'path'; store.set('pl-rm', 'path'); return go('learn'); }
-      if (d.rmday) { rmDay = d.rmday; rmOpen = null; return render(); }
-      if (d.rmunit) { rmOpen = rmShown === +d.rmunit ? 0 : +d.rmunit; return render(); }
-      if (d.rmmode) { rmMode = d.rmmode; store.set('pl-rm', rmMode); return render(); }
-      if (d.rmkind) { rmKind = d.rmkind; return render(); }
-      if (d.rmdone) { el.disabled = true; return rmToggle(d.rmdone).finally(() => { el.disabled = false; }); }
-      if (d.rmtrack) return rmTrack(d.rmtrack);
-      if ('rmblock' in d) return rmBlock();
       if (d.goto) { cal = { mode: 'day', anchor: parseYmd(d.goto) }; store.set('pl-cal', 'day'); return go('calendar'); }
       if (d.new) return openTask({}, { kind: d.new, day: d.day });
       if (d.cal) {
@@ -1153,7 +975,6 @@
     r.addEventListener('change', e => {
       const d = e.target.dataset;
       if (d.done) return setStatus(d.done, e.target.checked ? 'done' : 'todo');
-      if (d.rmnote) return rmNote(d.rmnote, e.target.value.trim());
       if ('ttag' in d) { taskTag = e.target.value; return render(); }
       if ('ttask' in d) { T.taskId = e.target.value || null; if (!T.label.trim()) T.label = ''; return saveT(); }
       if (d.goal) { const g = store.get('pl-goal', {}); g[d.goal] = Math.max(.5, +e.target.value || 1); store.set('pl-goal', g); return render(); }
@@ -1169,7 +990,6 @@
       if ('tproj' in d) { T.project = e.target.value; saveT(); return; }
       if ('tq' in d) { taskQ = e.target.value.trim().toLowerCase(); render(); return keepFocus('[data-tq]'); }
       if ('nq' in d) { noteQ = e.target.value; render(); return keepFocus('[data-nq]'); }
-      if ('rmq' in d) { rmQ = e.target.value; render(); return keepFocus('[data-rmq]'); }
       if (d.nf) {
         const n = notes.find(x => x.id === noteId);
         if (!n) return;
@@ -1215,11 +1035,11 @@
       tip.style.left = `${Math.min(box.width - tip.offsetWidth, Math.max(0, e.clientX - box.left - tip.offsetWidth / 2))}px`;
       tip.style.top = `${Math.max(0, e.clientY - box.top - 44)}px`;
     });
-    // keyboard: n = new task, 1–8 = views (not while typing)
+    // keyboard: n = new task, 1–7 = views (not while typing)
     addEventListener('keydown', e => {
       if (e.target.closest('input, textarea, select, dialog') || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === 'n') { e.preventDefault(); openTask(); }
-      const k = '12345678'.indexOf(e.key);
+      const k = '1234567'.indexOf(e.key);
       if (k >= 0 && e.key) go(Object.keys(VIEWS)[k]);
     });
     setInterval(tick, 500);

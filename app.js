@@ -1054,6 +1054,24 @@
     }
   }
 
-  window.App = { sb, esc, md, toast };   // shared with planner.js
+  // bar chart (inline SVG) shared by the planner and Learn pages
+  const num = v => String(+(+v).toFixed(2));
+  // single series, one hue, rounded data-ends on the baseline, hover tips, optional dashed goal line
+  function barChart(rows, unit, goal = 0, W = 680) {
+    const Hh = 170, L = 34, B = 24, T0 = 14, max = Math.max(goal * 1.1, ...rows.map(r => r.v), unit === ' h' ? 1 : 4);
+    const step = [.25, .5, 1, 2, 5, 10, 15, 20, 30, 60, 120, 240].find(s => max / s <= 4) || Math.ceil(max / 4), top = Math.ceil(max / step) * step;
+    const y = v => T0 + (Hh - T0 - B) * (1 - v / top), bw = (W - L) / rows.length, w = Math.max(2, Math.min(26, bw * .62));
+    const every = Math.ceil(rows.length / 10);
+    const grid = Array.from({ length: Math.round(top / step) + 1 }, (_, k) => k * step).map(v => `<line x1="${L}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${num(v)}</text>`).join('');
+    const bars = rows.map((r, k) => {
+      const x = L + bw * k + (bw - w) / 2, y0 = y(0), y1 = y(r.v), rr = Math.min(4, w / 2, y0 - y1);
+      const path = r.v > 0 ? `<path d="M${x},${y0}V${y1 + rr}Q${x},${y1} ${x + rr},${y1}H${x + w - rr}Q${x + w},${y1} ${x + w},${y1 + rr}V${y0}Z"/>` : '';
+      return `<g class="bar" data-tip="${esc(r.tip)}: ${num(r.v)}${unit}">${path}<rect class="hit" x="${L + bw * k}" y="${T0}" width="${bw}" height="${Hh - T0 - B}"/>${k % every === 0 ? `<text x="${x + w / 2}" y="${Hh - 6}" text-anchor="middle">${esc(r.label)}</text>` : ''}</g>`;
+    }).join('');
+    const goalLine = goal ? `<line class="goal-line" x1="${L}" x2="${W}" y1="${y(goal)}" y2="${y(goal)}"/><text class="goal-lbl" x="${W}" y="${y(goal) - 5}" text-anchor="end">goal ${num(goal)}${unit.trim()}</text>` : '';
+    return `<div class="chart"><svg viewBox="0 0 ${W} ${Hh}" role="img"><g class="grid">${grid}</g><line class="base" x1="${L}" x2="${W}" y1="${y(0)}" y2="${y(0)}"/>${bars}${goalLine}</svg><div class="tip" hidden></div></div>`;
+  }
+
+  window.App = { sb, esc, md, toast, barChart };   // shared with planner.js and learn.js
   ({ board, detail, getFile, admin, book })[page]?.();
 })();
