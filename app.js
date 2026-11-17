@@ -64,7 +64,7 @@
   };
 
   const card = (o, admin) => `
-    <a class="op card" href="opportunity.html?id=${o.id}">
+    <a class="op card" href="/opportunity?id=${o.id}">
       <div class="op-top"><span class="kind kind-${o.kind}">${KIND[o.kind]}</span>${o.is_public ? '' : '<span class="lock">private</span>'}${admin ? `<span class="status st-${o.status}">${o.status}</span>` : ''}</div>
       <h3>${esc(o.title)}</h3>
       <p class="meta">${esc([o.org, o.location].filter(Boolean).join(' · '))}</p>
@@ -118,7 +118,7 @@
       <div class="op-foot">${dueChip(o.deadline)}${admin ? `<span class="status st-${o.status}">${o.status}</span>` : ''}${(o.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
       <div class="actions">
         ${o.url ? `<a class="btn" href="${esc(o.url)}" target="_blank" rel="noopener">Open listing ↗</a>` : ''}
-        ${admin ? `<a class="btn ghost" href="admin.html#edit=${o.id}">Edit</a>` : ''}
+        ${admin ? `<a class="btn ghost" href="/admin#edit=${o.id}">Edit</a>` : ''}
       </div>
       ${o.summary ? `<p class="big-sum">${esc(o.summary)}</p>` : ''}
       <article class="prose">${md(o.body)}</article>
@@ -254,7 +254,7 @@
         <div class="op-row">
           <span class="op-bar bar-${o.kind}" title="${KIND[o.kind]}"></span>
           <div class="op-main">
-            <a class="op-title" href="opportunity.html?id=${o.id}">${esc(o.title)}</a>
+            <a class="op-title" href="/opportunity?id=${o.id}">${esc(o.title)}</a>
             <span class="meta">${KIND[o.kind]}${o.org ? ' · ' + esc(o.org) : ''}${o.location ? ' · ' + esc(o.location) : ''}</span>
           </div>
           <div class="op-due">${dueChip(o.deadline) || '<span class="meta">no deadline</span>'}</div>
@@ -418,7 +418,7 @@
 
   // ── file list + uploads. browse: true = the admin Files tab as a file manager (folders, move, copy, unzip);
   //    otherwise a flat list (each opportunity's kit shows only its files)
-  const shareUrl = code => new URL(`get.html?code=${code}`, location.href).href;
+  const shareUrl = code => new URL(`/get?code=${code}`, location.href).href;
   const fileUrl = x => sb.storage.from('files').getPublicUrl(x.path, { download: x.name }).data.publicUrl;
   const ext = n => (n.includes('.') ? n.split('.').pop() : 'file').slice(0, 4).toUpperCase();
   const MIME = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
@@ -1032,7 +1032,7 @@
         if (/taken|too soon|outside/i.test(err.message)) { await loadBusy(); setTimeout(() => { picked = null; draw(); }, 2200); }
         return;
       }
-      done = { ...data, cancelUrl: new URL(`book.html?cancel=${data.cancel_token}`, location.href).href };
+      done = { ...data, cancelUrl: new URL(`/book?cancel=${data.cancel_token}`, location.href).href };
       draw();
     });
     box.innerHTML = '<p class="meta">Loading free times…</p>';
@@ -1045,7 +1045,7 @@
       const s = new Date(b.start_at), past = s < new Date();
       box.innerHTML = `<div class="card book-closed"><p class="kicker">Your booking</p><h1 class="sub-h1">${esc(b.name)}, ${b.status === 'cancelled' ? 'this call is <em>cancelled</em>' : past ? 'this call has <em>passed</em>' : 'cancel your call?'}</h1>
         <p class="bk-when">📅 <b>${longDay(s)}</b> · ${tm(s)}–${tm(new Date(b.end_at))} (${b.minutes} min${b.meet_label ? ` · ${esc(b.meet_label)}` : ''})</p>
-        ${b.status === 'confirmed' && !past ? '<div class="actions"><button type="button" class="btn" id="bk-cancel">Cancel this call</button><a class="btn ghost" href="book.html">Book a different time</a></div><p class="meta" id="bk-msg" aria-live="polite"></p>' : '<a class="btn" href="book.html">Book a new time</a>'}</div>`;
+        ${b.status === 'confirmed' && !past ? '<div class="actions"><button type="button" class="btn" id="bk-cancel">Cancel this call</button><a class="btn ghost" href="/book">Book a different time</a></div><p class="meta" id="bk-msg" aria-live="polite"></p>' : '<a class="btn" href="/book">Book a new time</a>'}</div>`;
       $('#bk-cancel')?.addEventListener('click', async () => {
         const { error: e2 } = await sb.rpc('cancel_booking', { p_token: token });
         if (e2) { $('#bk-msg').textContent = rpcErr(e2); return; }

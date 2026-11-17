@@ -1,7 +1,7 @@
 {
   "name": "Rashid's Planner",
   "short_name": "Planner",
-  "start_url": "planner.html",
+  "start_url": "/planner",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0b0b0c",

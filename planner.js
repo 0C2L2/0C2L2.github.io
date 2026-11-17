@@ -95,7 +95,7 @@
     return out.sort((a, b) => (a.allDay ? 0 : +a.start) - (b.allDay ? 0 : +b.start));
   }
   const chip = (it, time) => it.dl
-    ? `<a class="ev ev-dl" href="opportunity.html?id=${it.dl.id}" title="Deadline: ${esc(it.dl.title)}">⚑ ${esc(it.dl.title)}</a>`
+    ? `<a class="ev ev-dl" href="/opportunity?id=${it.dl.id}" title="Deadline: ${esc(it.dl.title)}">⚑ ${esc(it.dl.title)}</a>`
     : `<button type="button" class="ev ev-${it.t.kind} p${it.t.priority}${it.t.status === 'done' ? ' done' : ''}" data-open="${it.t.id}" draggable="true" data-dday="${it.t.id}" title="${esc(it.t.title)} · drag to another day">${time && it.start ? `<span>${hm(it.start)}</span>` : ''}${it.t.repeat !== 'none' ? '↻ ' : ''}${esc(it.t.title)}</button>`;
 
   // overlapping blocks sit side by side
@@ -280,7 +280,7 @@
             <p class="grp">Today</p>${due.length ? due.map(taskRow).join('') : '<p class="meta">Nothing due today. Add one above.</p>'}
             ${next.length ? `<p class="grp">Next 7 days</p>${next.map(taskRow).join('')}` : ''}
           </section>
-          <section class="pl-card"><h3>Deadlines · next 14 days</h3>${soon.length ? soon.map(o => `<a class="dl-row" href="opportunity.html?id=${o.id}"><span>⚑ ${esc(o.title)}</span><b>${relDay(o.deadline)}</b></a>`).join('') : '<p class="meta">No opportunity deadlines in the next two weeks.</p>'}</section>
+          <section class="pl-card"><h3>Deadlines · next 14 days</h3>${soon.length ? soon.map(o => `<a class="dl-row" href="/opportunity?id=${o.id}"><span>⚑ ${esc(o.title)}</span><b>${relDay(o.deadline)}</b></a>`).join('') : '<p class="meta">No opportunity deadlines in the next two weeks.</p>'}</section>
         </div>
       </div>`;
   }
@@ -706,7 +706,7 @@
   };
   function vBook() {
     if (!hasBook) return '<p class="notice">Run <code>supabase/booking.sql</code> in Supabase → SQL Editor once to turn on the booking page, then reload.</p>';
-    const S = bset, link = new URL('book.html', location.href).href, now = Date.now();
+    const S = bset, link = new URL('/book', location.href).href, now = Date.now();
     const up = bookings.filter(b => b.status === 'confirmed' && Date.parse(b.end_at) > now);
     const past = bookings.filter(b => !up.includes(b)).reverse().slice(0, 30);
     const hours = S.hours || {};
@@ -714,7 +714,7 @@
       <section class="pl-card bk-share">
         <div><h3>Your booking page</h3><p class="meta">${S.enabled ? 'Open: anyone with the link can book a call.' : 'Closed: switch it on in the settings below.'}</p></div>
         <code>${esc(link)}</code>
-        <div class="actions"><button type="button" class="btn btn-sm" data-copylink="${esc(link)}">Copy link</button><a class="btn btn-sm ghost" href="book.html" target="_blank" rel="noopener">Open ↗</a></div>
+        <div class="actions"><button type="button" class="btn btn-sm" data-copylink="${esc(link)}">Copy link</button><a class="btn btn-sm ghost" href="/book" target="_blank" rel="noopener">Open ↗</a></div>
       </section>
       <section class="pl-card"><h3>Upcoming calls · ${up.length}</h3>${up.length ? up.map(bookRow).join('') : '<p class="meta">No calls booked yet. Share your link with friends and coworkers.</p>'}</section>
       <form class="pl-card bk-set" data-bookset>

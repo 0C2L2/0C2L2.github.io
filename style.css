@@ -688,7 +688,7 @@ dialog video { width: 100%; border-radius: 14px; background: #000; }
 @media (max-width: 640px) {
   .nav nav { gap: 16px; }
   .nav nav a[href="#about"], .nav nav a[href="#interests"], .nav nav .nav-extra { display: none; }
-  .nav nav a[href="index.html"] { display: none; }   /* sub-pages: the logo already links home */
+  .nav nav a[href="/"] { display: none; }   /* sub-pages: the logo already links home */
   .nav nav a { white-space: nowrap; }
   .op-form { grid-template-columns: 1fr; }
   .row-form, .code-form { flex-direction: column; align-items: stretch; }
