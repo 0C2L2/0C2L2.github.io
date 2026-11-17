@@ -1049,6 +1049,11 @@ body.cv-sheet { background: #fff; margin: 0; }
 /* learning roadmap (planner → Learn): a Duolingo-style path of dated days */
 .rm-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
 .rm-bar .chips { margin: 0; }
+.rm-bar .btn { margin-left: auto; }
+.rm-tracks { margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.rm-tracks button { font-size: 14px; padding: 9px 16px; }
+.rm-exam { font: 500 12.5px var(--mono); color: var(--muted); }
+.rm-exam b { color: var(--accent); }
 .rm-wrap { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; align-items: start; }
 .rm-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 10px; padding: 9px 4px; }
 .rm-row + .rm-row { border-top: 1px solid var(--line); }

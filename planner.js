@@ -740,20 +740,21 @@
   }
 
   // ───────── learning roadmap lives on its own page (/learn, learn.js); here each day just links to it
-  const RM = window.ROADMAP || null, rmByDay = {};
-  if (RM) for (const l of RM.lessons) (rmByDay[l.d] ||= []).push(l);
+  const RMS = window.ROADMAPS || [], rmByDay = {};   // every roadmap (AI/ML, Korean), merged per day
+  for (const R of RMS) for (const l of R.lessons) (rmByDay[l.d] ||= []).push({ ...l, r: R });
   let prog = new Map();
   const rmChip = d => {
     const L = rmByDay[d], n = L.filter(l => prog.has(l.i)).length, miss = n < L.length && d < todayStr();
-    return `<a class="ev ev-rm${n === L.length ? ' done' : miss ? ' miss' : ''}" href="/learn?day=${d}" title="Learning roadmap: ${L.length} lessons">◆ Learn ${n}/${L.length}</a>`;
+    return `<a class="ev ev-rm${n === L.length ? ' done' : miss ? ' miss' : ''}" href="/learn?day=${d}" title="Learning roadmaps: ${L.length} lessons">◆ Learn ${n}/${L.length}</a>`;
   };
   function rmTodayCard() {
-    if (!RM) return '';
-    const t = todayStr(), L = rmByDay[t] || [], behind = RM.lessons.filter(l => l.d < t && !prog.has(l.i)).length;
-    if (t < RM.start) return `<section class="pl-card"><div class="card-h"><h3>Learning roadmap</h3><a class="btn btn-sm ghost" href="/learn">Open Learn</a></div><p class="meta">Starts ${fmt(parseYmd(RM.start), { weekday: 'long', month: 'long', day: 'numeric' })}: 36 weeks, 2 hours a day.</p></section>`;
+    if (!RMS.length) return '';
+    const t = todayStr(), L = rmByDay[t] || [], start = RMS.map(R => R.start).sort()[0];
+    const behind = RMS.reduce((a, R) => a + R.lessons.filter(l => l.d < t && !prog.has(l.i)).length, 0);
+    if (t < start) return `<section class="pl-card"><div class="card-h"><h3>Learning roadmaps</h3><a class="btn btn-sm ghost" href="/learn">Open Learn</a></div><p class="meta">${RMS.map(R => esc(R.short)).join(' + ')} start ${fmt(parseYmd(start), { weekday: 'long', month: 'long', day: 'numeric' })}.</p></section>`;
     if (!L.length && !behind) return '';
     return `<section class="pl-card"><div class="card-h"><h3>Learning · today</h3><a class="btn btn-sm ghost" href="/learn">Open Learn</a></div>
-      ${behind ? `<p class="grp rm-due">${behind} overdue</p>` : ''}${L.map(l => `<div class="dl-row"><span>${prog.has(l.i) ? '✓ ' : ''}${esc(l.t)}</span><b>${dur(l.m)}</b></div>`).join('')}</section>`;
+      ${behind ? `<p class="grp rm-due">${behind} overdue</p>` : ''}${RMS.map(R => { const mine = L.filter(l => l.r === R); return mine.length ? `<p class="grp">${esc(R.short)} · ${mine.filter(l => prog.has(l.i)).length}/${mine.length}</p>${mine.map(l => `<a class="dl-row" href="/learn?r=${R.id}"><span>${prog.has(l.i) ? '✓ ' : ''}${esc(l.t)}</span><b>${dur(l.m)}</b></a>`).join('')}` : ''; }).join('')}</section>`;
   }
 
   // ───────── render + events
